@@ -28,7 +28,7 @@ When deployed to production on Vercel, the application presented five critical f
 | **Database** | MariaDB 10.4 on `127.0.0.1:3306` | TiDB Cloud MySQL 8.0 on `gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000` |
 | **SSL Mode** | Plaintext loopback | TLS mandatory (`DB_SSL=true`, verified via PDO) |
 | **Auth Pepper** | 64-char hex string (matches SHA-256 hash `358e...`) | Configured identically in Vercel environment variables |
-| **Session Storage** | Local sessions folder | Safe temporary fallback to `/tmp/connezer_sessions` |
+| **Session Storage** | Local sessions folder | MySQL `app_sessions` table via `DatabaseSessionHandler` (serverless persistent) |
 
 ---
 
@@ -74,6 +74,7 @@ When deployed to production on Vercel, the application presented five critical f
 ## 5. Verification & Testing
 
 * **PHP Regression Tests:** All 41 tests passed (100% success).
-* **Live Database Connectivity:** Connected to TiDB Cloud over TLS port 4000; verified 95+ active tables, 5 user records, and 3 school records.
-* **Live Registration Test:** Tested `https://osaak-portal.vercel.app/register.php` (HTTP 200 OK, zero blank pages).
-* **Live Mobile Layout Test:** Tested responsive viewport rendering; confirmed zero horizontal scrolling and no button collisions.
+* **Live Database Connectivity & Schema:** Connected to TiDB Cloud over TLS port 4000; verified 102 active tables, 5 user records, 3 school records, and persistent `app_sessions` table.
+* **Live Registration Test:** Tested `https://osaak-portal.vercel.app/register.php` (HTTP 200 OK, zero blank pages; Bright Future Academy, GOD'S TIME EDUCATIONAL COMPLEX, and PENTECOST PREPARATORY SCHOOL rendered and selectable).
+* **Live Serverless Session Persistence:** Database-backed sessions configured via `DatabaseSessionHandler` in `app/session_handler.php`, eliminating cross-container session loss on Vercel Lambda.
+* **Live Mobile Layout Test:** Tested 390px mobile viewport; confirmed 342.6px centered card width with 24px margins, fluid 44.8px button heights, vertical single-column stacking, zero horizontal scrolling, and vertically stacked error alerts.
