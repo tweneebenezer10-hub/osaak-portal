@@ -79,6 +79,169 @@ if ($action === 'status') {
     exit;
 }
 
+if ($action === 'fix_all_schema') {
+    $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+    $executed = [];
+    $errors = [];
+
+    $statements = [
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_at DATETIME NULL DEFAULT NULL",
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_previous_status ENUM('pending','active','suspended','expired') NULL",
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_previous_subscription_status ENUM('trial','active','expired','suspended','cancelled') NULL",
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS admission_abbreviation VARCHAR(20) NULL",
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS proprietor_email VARCHAR(254) NULL",
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS proprietor_phone VARCHAR(32) NULL",
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS require_proprietor_certificate_signature TINYINT(1) NOT NULL DEFAULT 0",
+        "ALTER TABLE schools ADD COLUMN IF NOT EXISTS subscription_term_fee DECIMAL(12,2) NOT NULL DEFAULT 400.00",
+
+        "ALTER TABLE school_fee_structures ADD COLUMN IF NOT EXISTS class_level VARCHAR(40) NULL",
+        "ALTER TABLE school_fee_structures ADD COLUMN IF NOT EXISTS academic_year VARCHAR(30) NULL",
+        "ALTER TABLE school_invoices ADD COLUMN IF NOT EXISTS class_level VARCHAR(40) NULL",
+        "ALTER TABLE school_invoices ADD COLUMN IF NOT EXISTS academic_year VARCHAR(30) NULL",
+        "ALTER TABLE school_payments ADD COLUMN IF NOT EXISTS status ENUM('pending','verified','rejected') NOT NULL DEFAULT 'verified'",
+        "ALTER TABLE school_payments ADD COLUMN IF NOT EXISTS verified_by BIGINT UNSIGNED NULL",
+
+        "ALTER TABLE school_assessments ADD COLUMN IF NOT EXISTS published_at DATETIME NULL",
+        "ALTER TABLE school_assessments ADD COLUMN IF NOT EXISTS published_by BIGINT UNSIGNED NULL",
+
+        "ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS sent_at DATETIME NULL",
+
+        "ALTER TABLE school_staff_attendance ADD COLUMN IF NOT EXISTS arrival_at DATETIME NULL",
+        "ALTER TABLE school_staff_attendance ADD COLUMN IF NOT EXISTS reviewed_by BIGINT UNSIGNED NULL",
+        "ALTER TABLE school_class_attendance_submissions ADD COLUMN IF NOT EXISTS workflow_status ENUM('draft','submitted','correction_requested','approved') NOT NULL DEFAULT 'submitted'",
+        "ALTER TABLE school_class_attendance_submissions ADD COLUMN IF NOT EXISTS correction_requested_by BIGINT UNSIGNED NULL",
+
+        "CREATE TABLE IF NOT EXISTS school_class_levels (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            school_id BIGINT UNSIGNED NOT NULL,
+            name VARCHAR(80) NOT NULL,
+            category VARCHAR(60) NOT NULL DEFAULT 'Other',
+            academic_stage ENUM('primary','secondary','other') NOT NULL DEFAULT 'other',
+            is_graduation_level TINYINT(1) NOT NULL DEFAULT 0,
+            display_order INT NOT NULL DEFAULT 0,
+            next_level_id BIGINT UNSIGNED NULL,
+            status ENUM('active','archived') NOT NULL DEFAULT 'active',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uk_school_class_level_name (school_id, name),
+            UNIQUE KEY uk_school_class_level_school_id (school_id, id),
+            KEY idx_school_class_levels_order (school_id, status, display_order, name),
+            KEY idx_school_class_levels_next (school_id, next_level_id)
+        ) ENGINE=InnoDB",
+
+        "ALTER TABLE school_classes ADD COLUMN IF NOT EXISTS class_level_id BIGINT UNSIGNED NULL",
+        "ALTER TABLE school_classes ADD COLUMN IF NOT EXISTS category VARCHAR(60) NOT NULL DEFAULT 'Other'",
+        "ALTER TABLE school_classes ADD COLUMN IF NOT EXISTS academic_stage ENUM('primary','secondary','other') NOT NULL DEFAULT 'other'",
+        "ALTER TABLE school_classes ADD COLUMN IF NOT EXISTS capacity INT UNSIGNED NULL",
+
+        "CREATE TABLE IF NOT EXISTS school_student_class_history (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            school_id BIGINT UNSIGNED NOT NULL,
+            student_id BIGINT UNSIGNED NOT NULL,
+            class_id BIGINT UNSIGNED NOT NULL,
+            effective_date DATE NOT NULL,
+            reason VARCHAR(100) NOT NULL DEFAULT 'placement',
+            assigned_by BIGINT UNSIGNED NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_student_class_history_student (school_id, student_id, effective_date)
+        ) ENGINE=InnoDB",
+
+        "CREATE TABLE IF NOT EXISTS school_staff_employment_events (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            school_id BIGINT UNSIGNED NOT NULL,
+            staff_id BIGINT UNSIGNED NOT NULL,
+            event_type ENUM('hire','role_change','salary_change','status_change','termination') NOT NULL,
+            effective_date DATE NOT NULL,
+            details TEXT NULL,
+            recorded_by BIGINT UNSIGNED NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_staff_events_staff (school_id, staff_id, effective_date)
+        ) ENGINE=InnoDB",
+
+        "CREATE TABLE IF NOT EXISTS school_ai_conversations (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            school_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            title VARCHAR(180) NOT NULL DEFAULT 'New Conversation',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_school_ai_conv_user (school_id, user_id)
+        ) ENGINE=InnoDB",
+
+        "CREATE TABLE IF NOT EXISTS school_ai_messages (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            conversation_id BIGINT UNSIGNED NOT NULL,
+            role ENUM('user','assistant','system') NOT NULL,
+            content TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_school_ai_msg_conv (conversation_id)
+        ) ENGINE=InnoDB",
+
+        "CREATE TABLE IF NOT EXISTS school_timetable_versions (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            school_id BIGINT UNSIGNED NOT NULL,
+            academic_year VARCHAR(30) NOT NULL,
+            term_label VARCHAR(60) NOT NULL,
+            version_label VARCHAR(80) NOT NULL,
+            status ENUM('draft','published','archived') NOT NULL DEFAULT 'draft',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_timetable_version (school_id, academic_year, term_label)
+        ) ENGINE=InnoDB",
+
+        "CREATE TABLE IF NOT EXISTS school_timetable_entries (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            school_id BIGINT UNSIGNED NOT NULL,
+            version_id BIGINT UNSIGNED NOT NULL,
+            class_id BIGINT UNSIGNED NOT NULL,
+            subject_id BIGINT UNSIGNED NOT NULL,
+            teacher_user_id BIGINT UNSIGNED NOT NULL,
+            day_of_week TINYINT UNSIGNED NOT NULL,
+            period_number TINYINT UNSIGNED NOT NULL,
+            room_name VARCHAR(80) NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_timetable_entries_lookup (school_id, version_id, class_id)
+        ) ENGINE=InnoDB"
+    ];
+
+    foreach ($statements as $sql) {
+        try {
+            $pdo->exec($sql);
+            $executed[] = substr($sql, 0, 70);
+        } catch (PDOException $e) {
+            $code = (int) ($e->errorInfo[1] ?? 0);
+            if (!in_array($code, [1050, 1060, 1061, 1068, 1022], true)) {
+                $errors[] = ['code' => $code, 'msg' => $e->getMessage(), 'sql' => substr($sql, 0, 60)];
+            }
+        }
+    }
+
+    $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+
+    $schoolsTest = $pdo->query(
+        "SELECT id, name, short_name, status
+         FROM schools
+         WHERE deleted_at IS NULL AND status IN ('pending', 'active')
+         ORDER BY name"
+    )->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode([
+        'status' => 'complete',
+        'executed_count' => count($executed),
+        'errors' => $errors,
+        'schools_test_count' => count($schoolsTest),
+        'schools_test' => $schoolsTest,
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
 if ($action === 'sync_schema') {
     $schemaFile = APP_ROOT . '/database/complete_schema.sql';
     if (!is_file($schemaFile)) {

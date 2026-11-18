@@ -283,6 +283,19 @@ body.application-body {
     overflow-x: hidden;
 }
 
+.auth-login-body .page-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.auth-login-body .notice {
+    width: min(100% - 32px, 440px);
+    margin: 16px auto 0;
+    box-sizing: border-box;
+    text-align: left;
+}
+
 .auth-login-body .login-brand-header {
     width: 100%;
     background: #102b49;

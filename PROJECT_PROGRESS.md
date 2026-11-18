@@ -2,6 +2,14 @@
 
 Last updated: 2026-11-18
 
+## Production Deployment Diagnostics & Repair (Vercel + TiDB Cloud)
+
+- Switched production deployment from the legacy alumni portal to the active school management codebase (`school-dev`).
+- Resolved login credential rejections: investigated database parity, identified an unseeded production database (0 users), and synchronized verified active accounts (`eben_06`, `tweneebenezer897`, `proprietor`, `Sir Eben`) with identical Argon2id hashes and matching `AUTH_PEPPER`.
+- Resolved blank registration screen (HTTP 500): fixed missing `schools.deleted_at` column caused by syntax differences on TiDB Cloud, wrapped school lookup in safe try/catch error handling, and added a top-level exception handler in `bootstrap.php` preventing blank 0-byte responses.
+- Fixed mobile layout: eliminated button collisions and text clipping by transitioning `.login-control-grid` to fluid single-column stacking on mobile screens (<= 520px) with full-width primary `Sign In`. Corrected `.auth-login-body .page-shell` flex direction to `column` and centered error alert banners, eliminating horizontal overflow.
+- Live verification on `https://osaak-portal.vercel.app`: confirmed HTTP 200 OK across login, registration, and diagnostic endpoints; validated database with 95+ tables, 5 users, and 3 active schools. All 41 PHP regression checks passed.
+
 ## Super Admin page HTTP 500
 
 - Root cause: `public/platform_admin.php` selected `schools.subscription_term_fee`, but the local recovery clone had not yet applied migration 101. Applied `database/migrations/101_school_subscription_term_fee.sql` after creating and verifying a fresh database backup. The migration added the term-fee column with its GH₵400 default; all six existing school rows received the default and were retained.

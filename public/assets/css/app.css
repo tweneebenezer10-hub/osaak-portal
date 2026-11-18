@@ -535,12 +535,18 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .auth-login-body .site-header { border-bottom: 0; background: transparent; padding-top: 14px; }
 .auth-login-body .page-shell {
     display: flex;
+    flex-direction: column;
     width: 100%;
     min-height: 0;
     flex: 1;
     align-items: stretch;
     justify-content: flex-start;
     padding: 0;
+}
+.auth-login-body .page-shell > .notice {
+    width: min(100% - 32px, 440px);
+    margin: 16px auto 0;
+    box-sizing: border-box;
 }
 .auth-login-layout { width: 100%; min-height: 0; display: flex; flex-direction: column; padding: 0; }
 .login-brand-header { width: 100%; background: #061D3D; color: #fff; }
