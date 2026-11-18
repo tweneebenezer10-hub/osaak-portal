@@ -15,16 +15,22 @@ set_exception_handler(static function (Throwable $e): void {
 });
 
 define('APP_ROOT', dirname(__DIR__));
+$isRender = getenv('RENDER') !== false;
+$isVercel = getenv('VERCEL') !== false;
 $isProduction = strtolower((string) getenv('APP_ENV')) === 'production'
-    || getenv('VERCEL') !== false
-    || getenv('RENDER') !== false;
+    || $isVercel
+    || $isRender;
 
 $configFile = APP_ROOT . '/config/local.php';
 if ($isProduction || !is_file($configFile)) {
-    if (is_file(APP_ROOT . '/config/vercel.php')) {
+    if ($isRender && is_file(APP_ROOT . '/config/render.php')) {
+        $configFile = APP_ROOT . '/config/render.php';
+    } elseif ($isVercel && is_file(APP_ROOT . '/config/vercel.php')) {
         $configFile = APP_ROOT . '/config/vercel.php';
     } elseif (is_file(APP_ROOT . '/config/render.php')) {
         $configFile = APP_ROOT . '/config/render.php';
+    } elseif (is_file(APP_ROOT . '/config/vercel.php')) {
+        $configFile = APP_ROOT . '/config/vercel.php';
     }
 }
 if (!is_file($configFile)) {

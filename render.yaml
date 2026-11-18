@@ -19,13 +19,13 @@ services:
       - key: APP_URL
         sync: false
       - key: APP_TIMEZONE
-        value: UTC
+        value: Africa/Accra
       - key: RECEIPT_FINANCIAL_TITLE
         value: CONNEZER EDUTECH SYSTEMS
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        value: "3306"
+        sync: false
       - key: DB_NAME
         sync: false
       - key: DB_USER
@@ -34,6 +34,8 @@ services:
         sync: false
       - key: DB_CHARSET
         value: utf8mb4
+      - key: DB_SSL
+        value: "true"
       - key: DB_SSL_CA
         sync: false
       - key: AUTH_PEPPER

@@ -2,6 +2,15 @@
 
 Last updated: 2026-11-18
 
+## Render Migration & Production Architecture (Docker + Apache + TiDB Cloud)
+
+- Evaluated hosting architectures between serverless (Vercel) and containerized Linux runtime (Render). Render provides persistent Apache processes, native multi-threading, custom upload limits (`upload_max_filesize=12M`, `post_max_size=14M`), and persistent disk mounting for private files (`/var/www/html/storage`).
+- Configured production-ready containerization: verified `Dockerfile` with PHP 8.3 Apache, enabled extensions (`gd`, `intl`, `mysqli`, `opcache`, `pdo_mysql`, `zip`), enabled Apache modules (`mod_rewrite`, `mod_headers`), configured `DocumentRoot` to `/var/www/html/public`, and set up non-root file ownership for `www-data`.
+- Created `docker-compose.yml` for unified local container execution matching the Render production environment.
+- Configured `render.yaml` Blueprint with persistent disk specification (`connezer-storage` mounted to `/var/www/html/storage`), healthcheck path `/healthz.php`, and environment variables mapped to production secrets.
+- Created `RENDER_DEPLOYMENT_GUIDE.md` detailing step-by-step Blueprint and manual Web Service setup, environment variables, storage mounting, and post-deployment verification procedures.
+- Preserved complete local XAMPP compatibility without modifying existing development workflows. All 41 PHP regression tests continue to pass with 100% success.
+
 ## Production Deployment Diagnostics & Repair (Vercel + TiDB Cloud)
 
 - Switched production deployment from the legacy alumni portal to the active school management codebase (`school-dev`).

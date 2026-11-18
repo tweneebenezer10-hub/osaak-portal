@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: connezer-edutech-app
+    ports:
+      - "10000:10000"
+    environment:
+      - PORT=10000
+      - APP_ENV=production
+      - APP_NAME=CONNEZER EDUTECH SYSTEMS
+      - APP_URL=http://localhost:10000
+      - APP_TIMEZONE=Africa/Accra
+      - RECEIPT_FINANCIAL_TITLE=CONNEZER EDUTECH SYSTEMS
+      - DB_HOST=${DB_HOST:-gateway01.ap-northeast-1.prod.aws.tidbcloud.com}
+      - DB_PORT=${DB_PORT:-4000}
+      - DB_NAME=${DB_NAME:-secure_auth_system}
+      - DB_USER=${DB_USER:-4537XGEvg1QQfWd.root}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DB_CHARSET=utf8mb4
+      - DB_SSL=${DB_SSL:-true}
+      - AUTH_PEPPER=${AUTH_PEPPER:-932e45c7e413c72a24171c3724a3497967245821368507c2dc3ec9bb1956bede}
+      - APP_KEY=${APP_KEY:-64a23d1fc186b4c02a2e2a70ed78bb7a8da34b3aa8a91d251639c9f042efc209}
+      - MAIL_HOST=${MAIL_HOST:-}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USERNAME=${MAIL_USERNAME:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
+      - MAIL_FROM_EMAIL=${MAIL_FROM_EMAIL:-}
+      - MAIL_FROM_NAME=CONNEZER EDUTECH SYSTEMS
+    volumes:
+      - connezer-storage:/var/www/html/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/healthz.php"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  connezer-storage:
+    driver: local
