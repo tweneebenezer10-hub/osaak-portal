@@ -25,19 +25,26 @@ if (isset($_GET['change_school'])) {
 $schoolId = filter_var($_SESSION['school_registration_id'] ?? null, FILTER_VALIDATE_INT);
 $school = null;
 if ($schoolId !== false && $schoolId > 0) {
-    $schoolStmt = db()->prepare(
-        "SELECT id, name, short_name, status
-         FROM schools
-         WHERE id = ? AND deleted_at IS NULL
-           AND status IN ('pending', 'active')
-           AND subscription_status IN ('trial','active')
-           AND (subscription_expires_at IS NULL OR subscription_expires_at > UTC_TIMESTAMP())
-         LIMIT 1"
-    );
-    $schoolStmt->execute([$schoolId]);
-    $school = $schoolStmt->fetch();
-    if (!$school) {
+    try {
+        $schoolStmt = db()->prepare(
+            "SELECT id, name, short_name, status
+             FROM schools
+             WHERE id = ? AND deleted_at IS NULL
+               AND status IN ('pending', 'active')
+               AND subscription_status IN ('trial','active')
+               AND (subscription_expires_at IS NULL OR subscription_expires_at > UTC_TIMESTAMP())
+             LIMIT 1"
+        );
+        $schoolStmt->execute([$schoolId]);
+        $school = $schoolStmt->fetch();
+        if (!$school) {
+            unset($_SESSION['school_registration_id']);
+            $schoolId = false;
+        }
+    } catch (Throwable $e) {
+        error_log('Registration active school check failed: ' . $e->getMessage());
         unset($_SESSION['school_registration_id']);
+        $school = null;
         $schoolId = false;
     }
 }
@@ -259,15 +266,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($school === null) {
-    $schoolListStmt = db()->query(
-        "SELECT id, name, short_name, logo_path, region, district, status
-         FROM schools
-         WHERE deleted_at IS NULL AND status IN ('pending', 'active')
-           AND subscription_status IN ('trial','active')
-           AND (subscription_expires_at IS NULL OR subscription_expires_at > UTC_TIMESTAMP())
-         ORDER BY name"
-    );
-    $schools = $schoolListStmt->fetchAll();
+    $schools = [];
+    $schoolLookupError = null;
+    try {
+        $schoolListStmt = db()->query(
+            "SELECT id, name, short_name, logo_path, region, district, status
+             FROM schools
+             WHERE deleted_at IS NULL AND status IN ('pending', 'active')
+               AND subscription_status IN ('trial','active')
+               AND (subscription_expires_at IS NULL OR subscription_expires_at > UTC_TIMESTAMP())
+             ORDER BY name"
+        );
+        $schools = $schoolListStmt->fetchAll();
+    } catch (Throwable $e) {
+        error_log('Registration school lookup failed: ' . $e->getMessage());
+        $schoolLookupError = 'The school registration directory is currently initializing or updating. Please check back shortly or contact IT support below.';
+    }
     $superAdminContact = platform_super_admin_contact_details();
 }
 
@@ -279,7 +293,9 @@ render_header('School registration', false);
         <h1>Register with your school</h1>
         <p class="muted">Select your school and request an available school role. The Proprietor is set up separately by the Platform Super Admin.</p>
         <p class="muted"><a href="proprietor_setup.php">Already designated as a school Proprietor? Set up your account with your OTP.</a></p>
-        <?php if ($schools === []): ?>
+        <?php if ($schoolLookupError !== null): ?>
+            <p class="notice notice-error"><?= e($schoolLookupError) ?></p>
+        <?php elseif ($schools === []): ?>
             <p class="notice notice-error">No schools are currently accepting registrations. Contact support if your school is not listed.</p>
         <?php else: ?>
             <form method="post" action="register.php" class="form-stack">

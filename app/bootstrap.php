@@ -4,6 +4,16 @@ declare(strict_types=1);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
+set_exception_handler(static function (Throwable $e): void {
+    error_log('Uncaught ' . get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: text/html; charset=UTF-8');
+    }
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>System Notice | CONNEZER EDUTECH SYSTEMS</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#f5f7f9;color:#1c344b;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box}.card{background:#fff;border-radius:12px;padding:32px 24px;max-width:480px;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.08);text-align:center;box-sizing:border-box}h1{font-size:1.35rem;color:#061D3D;margin:0 0 12px}p{color:#55697d;font-size:.95rem;line-height:1.5;margin:0 0 20px}a{display:inline-block;background:#061D3D;color:#fff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:600;font-size:.92rem}</style></head><body><div class="card"><h1>System Notice</h1><p>We encountered an unexpected error processing your request. The technical team has been notified. Please try again shortly or contact IT support.</p><a href="index.php">Return to Sign In</a></div></body></html>';
+    exit;
+});
+
 define('APP_ROOT', dirname(__DIR__));
 $isProduction = strtolower((string) getenv('APP_ENV')) === 'production'
     || getenv('VERCEL') !== false

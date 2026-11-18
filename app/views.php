@@ -364,7 +364,7 @@ function render_header(string $title, bool $showNav = true): void
     <link rel="apple-touch-icon" href="assets/images/connezer-app-icon.png">
     <link rel="icon" href="assets/images/super-admin-logo.jpeg" type="image/jpeg">
     <link rel="stylesheet" href="assets/css/app.css?v=202">
-    <link rel="stylesheet" href="assets/css/design-system.css?v=6">
+    <link rel="stylesheet" href="assets/css/design-system.css?v=7">
     <script src="assets/js/app.js?v=92" defer></script>
 </head>
 <body class="<?= $isApplication ? 'application-body' : 'auth-body' ?><?= !$isApplication && $title === 'School login' ? ' auth-login-body' : '' ?><?= $title === 'Staff attendance kiosk' ? ' attendance-kiosk-body' : '' ?>">
