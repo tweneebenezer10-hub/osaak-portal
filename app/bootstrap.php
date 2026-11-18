@@ -73,6 +73,9 @@ try {
     error_log('Secure Auth timezone configuration is invalid: ' . $timezone);
     exit('The local timezone configuration is invalid. Check config/local.php.');
 }
+require_once APP_ROOT . '/app/functions.php';
+require_once APP_ROOT . '/app/session_handler.php';
+
 ini_set('session.use_strict_mode', '1');
 ini_set('session.use_only_cookies', '1');
 session_name('secure_auth_session');
@@ -86,13 +89,25 @@ session_set_cookie_params([
     'httponly' => true,
     'samesite' => 'Strict',
 ]);
-if ($isProduction && !empty(ini_get('session.save_path')) && !is_dir((string) ini_get('session.save_path'))) {
-    $tempSession = sys_get_temp_dir() . '/connezer_sessions';
-    if (!is_dir($tempSession)) {
-        @mkdir($tempSession, 0700, true);
-    }
-    if (is_dir($tempSession) && is_writable($tempSession)) {
-        session_save_path($tempSession);
+if ($isProduction) {
+    try {
+        db()->exec("CREATE TABLE IF NOT EXISTS app_sessions (
+            id VARCHAR(128) NOT NULL PRIMARY KEY,
+            session_data MEDIUMTEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_app_sessions_expires (expires_at)
+        ) ENGINE=InnoDB");
+        session_set_save_handler(new DatabaseSessionHandler(db()), true);
+    } catch (Throwable $e) {
+        error_log('Database session handler initialization: ' . $e->getMessage());
+        $tempSession = sys_get_temp_dir() . '/connezer_sessions';
+        if (!is_dir($tempSession)) {
+            @mkdir($tempSession, 0700, true);
+        }
+        if (is_dir($tempSession) && is_writable($tempSession)) {
+            session_save_path($tempSession);
+        }
     }
 }
 session_start();
@@ -106,7 +121,6 @@ header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0')
 header('Pragma: no-cache');
 header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
 
-require_once APP_ROOT . '/app/functions.php';
 require_once APP_ROOT . '/app/school_tenant.php';
 require_once APP_ROOT . '/app/school_parent_links.php';
 require_once APP_ROOT . '/app/school_academic_calendar.php';
