@@ -1,0 +1,23 @@
+{
+  "name": "CONNEZER EDUTECH SYSTEMS",
+  "short_name": "CONNEZER",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f7f8",
+  "theme_color": "#142e50",
+  "description": "SMART SCHOOL MANAGEMENT SYSTEM. Smart Technology. Better Education.",
+  "icons": [
+    {
+      "src": "assets/images/connezer-app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/images/connezer-edutech-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

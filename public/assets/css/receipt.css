@@ -1,0 +1,383 @@
+:root {
+    color-scheme: light;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #172b4d;
+    background: #eef3f8;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body.receipt-page {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    padding: 36px 20px;
+    background: #eef3f8;
+}
+
+.receipt-sheet {
+    width: min(100%, 760px);
+    margin: 0 auto;
+    padding: 42px 54px;
+    border: 1px solid #dce5ef;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 12px 36px rgb(24 54 92 / 10%);
+}
+
+.receipt-heading {
+    padding-bottom: 26px;
+    border-bottom: 2px solid #1769aa;
+    text-align: center;
+}
+
+.association-branding-receipt {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.association-branding-receipt .association-branding-logo {
+    display: block;
+    max-width: min(100%, 150px);
+    height: 86px;
+    margin-right: auto;
+    margin-left: auto;
+    object-fit: contain;
+}
+
+.association-branding-receipt .association-branding-name {
+    display: block;
+    max-width: 100%;
+    color: #173f69;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.association-branding-receipt .association-branding-acronym {
+    display: block;
+    color: #1769aa;
+    font-size: .95rem;
+    font-weight: 800;
+    letter-spacing: .07em;
+    line-height: 1;
+}
+
+.association-branding-receipt .brand-mark {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border-radius: 7px;
+    background: #1769aa;
+    color: #fff;
+    font-size: .72rem;
+    font-weight: 750;
+}
+
+.receipt-kind {
+    margin: 16px 0 5px;
+    color: #536b83;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+}
+
+.receipt-heading h1 {
+    margin: 0;
+    color: #1769aa;
+    font-size: 1.32rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.receipt-section {
+    padding-top: 24px;
+}
+
+.receipt-section h2 {
+    margin: 0 0 15px;
+    color: #173f69;
+    font-size: 1.05rem;
+}
+
+.receipt-details {
+    display: grid;
+    grid-template-columns: minmax(145px, .9fr) minmax(0, 1.6fr);
+    gap: 0;
+    margin: 0;
+}
+
+.receipt-details dt,
+.receipt-details dd {
+    min-width: 0;
+    margin: 0;
+    padding: 12px 0;
+    border-bottom: 1px solid #e8edf3;
+    line-height: 1.45;
+}
+
+.receipt-details dt {
+    padding-right: 15px;
+    color: #5b6c7d;
+    font-size: .91rem;
+}
+
+.receipt-details dd {
+    color: #1c2e40;
+    font-size: .95rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.receipt-amount {
+    color: #145e98 !important;
+    font-size: 1.08rem !important;
+}
+
+.receipt-status {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #e6f4eb;
+    color: #21643a;
+    font-size: .84rem;
+    font-weight: 700;
+}
+
+.receipt-status-pending {
+    background: #fff3d6;
+    color: #76510b;
+}
+
+.receipt-status-rejected,
+.receipt-status-refunded {
+    background: #fde8e7;
+    color: #982e2a;
+}
+
+.receipt-notice {
+    margin: 22px 0 0;
+    padding: 13px 15px;
+    border: 1px solid #ead39b;
+    border-radius: 8px;
+    background: #fff8e7;
+    color: #684d13;
+    font-size: .92rem;
+    line-height: 1.5;
+}
+
+.receipt-notice-rejected,
+.receipt-notice-refunded {
+    border-color: #efc4c1;
+    background: #fff0ef;
+    color: #822c28;
+}
+
+.receipt-footnote {
+    margin: 22px 0 0;
+    color: #647487;
+    font-size: .86rem;
+    line-height: 1.55;
+}
+
+.receipt-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.receipt-button {
+    min-height: 42px;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 7px;
+    background: #1769aa;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-size: .92rem;
+    font-weight: 700;
+}
+
+.receipt-button:hover {
+    background: #12558a;
+}
+
+.receipt-back {
+    color: #1769aa;
+    font-size: .91rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.receipt-back:hover {
+    text-decoration: underline;
+}
+
+.receipt-stamp {
+    width: min(100%, 225px);
+    margin: 18px 0 12px auto;
+    padding: 6px 9px 5px;
+    border: 1.5px solid #245a96;
+    border-radius: 3px;
+    color: #245a96;
+    background: #fff;
+    text-align: center;
+}
+
+.receipt-stamp-heading { display: flex; align-items: center; justify-content: center; gap: 5px; }
+.receipt-stamp-logo { width: 24px; height: 24px; flex: 0 0 auto; object-fit: contain; }
+.receipt-stamp-brand { display: grid; gap: 2px; }
+.receipt-stamp-brand strong { font-size: .78rem; letter-spacing: .1em; line-height: 1.15; }
+.receipt-stamp-brand span { font-size: .43rem; font-weight: 700; letter-spacing: .025em; line-height: 1.2; }
+.receipt-stamp-status { margin: 4px 0 3px; padding: 2px 0; border-top: 1px solid currentColor; border-bottom: 1px solid currentColor; font-size: .57rem; font-weight: 750; letter-spacing: .06em; }
+.receipt-stamp-date { margin: 0 0 4px; font-size: .57rem; }
+.receipt-stamp-date span { font-weight: 700; }
+.receipt-stamp-signature { display: grid; justify-items: center; gap: 1px; font-size: .5rem; font-weight: 650; }
+.receipt-stamp-signature-line { width: 76px; border-top: 1px solid currentColor; }
+
+@media (max-width: 600px) {
+    body.receipt-page {
+        padding: 14px 10px;
+    }
+
+    .receipt-sheet {
+        padding: 28px 20px;
+        border-radius: 11px;
+    }
+
+    .receipt-details {
+        grid-template-columns: minmax(105px, .8fr) minmax(0, 1.2fr);
+    }
+
+    .receipt-details dt {
+        padding-right: 10px;
+        font-size: .82rem;
+    }
+
+    .receipt-details dd {
+        font-size: .86rem;
+    }
+
+    .receipt-actions {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 13px;
+    }
+
+    .receipt-back {
+        text-align: center;
+    }
+}
+
+@page {
+    size: 210mm 297mm !important;
+    margin: 12mm;
+}
+
+@media print {
+    :root,
+    body.receipt-page {
+        background: #fff;
+        color: #000;
+    }
+
+    body.receipt-page {
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+
+    html,
+    body.receipt-page {
+        width: 186mm;
+        max-width: 186mm;
+    }
+
+    .receipt-page *,
+    .receipt-page *::before,
+    .receipt-page *::after {
+        transform: none !important;
+        rotate: none !important;
+        scale: none !important;
+        translate: none !important;
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .receipt-sheet {
+        width: 100%;
+        max-width: none;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        position: static;
+        overflow: visible;
+    }
+
+    .receipt-heading {
+        position: static;
+        text-align: center;
+    }
+
+    .association-branding-receipt .association-branding-logo { margin-right: auto; margin-left: auto; }
+
+    .receipt-details {
+        display: grid;
+        grid-template-columns: minmax(40mm, .9fr) minmax(0, 1.6fr);
+        width: 100%;
+    }
+
+    .receipt-details dt,
+    .receipt-details dd {
+        position: static;
+        float: none;
+    }
+
+    .receipt-actions {
+        display: none;
+    }
+
+    .receipt-heading {
+        padding-bottom: 20px;
+    }
+
+    .receipt-details dt,
+    .receipt-details dd {
+        padding-top: 9px;
+        padding-bottom: 9px;
+        break-inside: avoid;
+    }
+
+    .receipt-sheet,
+    .receipt-heading,
+    .receipt-section,
+    .receipt-details,
+    .receipt-stamp {
+        break-inside: avoid;
+    }
+}
+@media screen {
+    .receipt-details dt,
+    .receipt-details dd {
+        font-size: max(14px, 1em);
+    }
+}

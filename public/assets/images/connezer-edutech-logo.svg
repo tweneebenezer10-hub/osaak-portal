@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Connezer Edutech Systems education and technology logo</title>
+  <rect x="32" y="32" width="448" height="448" rx="76" fill="#fff"/>
+  <path d="M256 414c-49-40-112-60-183-60V227c71 0 134 20 183 60 49-40 112-60 183-60v127c-71 0-134 20-183 60Z" fill="#e9f4ff" stroke="#153554" stroke-linejoin="round" stroke-width="14"/>
+  <path d="M256 287v123m-146-92c46 5 87 19 122 43m170-43c-46 5-87 19-122 43" fill="none" stroke="#5aa9e6" stroke-linecap="round" stroke-width="12"/>
+  <path d="m130 196 126-54 126 54-126 54-126-54Z" fill="#153554" stroke="#153554" stroke-linejoin="round" stroke-width="12"/>
+  <path d="M177 219v42c43 27 115 27 158 0v-42" fill="#153554" stroke="#153554" stroke-linejoin="round" stroke-width="10"/>
+  <path d="M382 196v58" fill="none" stroke="#d9a63a" stroke-linecap="round" stroke-width="9"/>
+  <circle cx="382" cy="265" r="12" fill="#d9a63a"/>
+  <path d="M130 196 86 163m296 33 44-33M256 142V99" fill="none" stroke="#5aa9e6" stroke-linecap="round" stroke-width="8"/>
+  <circle cx="86" cy="163" r="13" fill="#5aa9e6"/>
+  <circle cx="426" cy="163" r="13" fill="#5aa9e6"/>
+  <circle cx="256" cy="99" r="13" fill="#d9a63a"/>
+</svg>

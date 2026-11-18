@@ -1,0 +1,12 @@
+{
+  "name": "university/secure-auth-system",
+  "description": "PHP/MySQL authentication project for local XAMPP development",
+  "type": "project",
+  "require": {
+    "php": "^8.1",
+    "phpmailer/phpmailer": "^6.9"
+  },
+  "scripts": {
+    "test": "@php tests/regression.php"
+  }
+}

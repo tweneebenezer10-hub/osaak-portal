@@ -1,0 +1,32 @@
+# Secrets and environment configuration
+/config/local.php
+/.env
+/.env.*
+!/.env.example
+
+# Composer dependencies
+/vendor/
+
+# Storage and uploads (persist externally in production)
+/storage/*
+!/storage/.htaccess
+!/storage/.gitkeep
+/storage/backups/*
+/storage/local-db-recovery/*
+/storage/logs/*
+/storage/sessions/*
+
+# Database dumps, archives, and backup locks
+*.sql.gz
+*.tar.gz
+*.lock
+!composer.lock
+
+# Logs
+*.log
+
+# Editor and system metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

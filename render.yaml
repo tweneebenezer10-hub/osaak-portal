@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: connezer-edutech-web
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz.php
+    autoDeploy: false
+    disk:
+      name: connezer-storage
+      mountPath: /var/www/html/storage
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: CONNEZER EDUTECH SYSTEMS
+      - key: APP_URL
+        sync: false
+      - key: APP_TIMEZONE
+        value: UTC
+      - key: RECEIPT_FINANCIAL_TITLE
+        value: CONNEZER EDUTECH SYSTEMS
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_CHARSET
+        value: utf8mb4
+      - key: DB_SSL_CA
+        sync: false
+      - key: AUTH_PEPPER
+        sync: false
+      - key: APP_KEY
+        sync: false
+      - key: MAIL_HOST
+        sync: false
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_ENCRYPTION
+        value: tls
+      - key: MAIL_FROM_EMAIL
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: CONNEZER EDUTECH SYSTEMS
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: OLLAMA_MODEL
+        value: granite3.3:2b

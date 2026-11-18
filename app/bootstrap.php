@@ -1,0 +1,168 @@
+<?php
+declare(strict_types=1);
+
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+define('APP_ROOT', dirname(__DIR__));
+$isProduction = strtolower((string) getenv('APP_ENV')) === 'production'
+    || getenv('VERCEL') !== false
+    || getenv('RENDER') !== false;
+
+$configFile = APP_ROOT . '/config/local.php';
+if ($isProduction || !is_file($configFile)) {
+    if (is_file(APP_ROOT . '/config/vercel.php')) {
+        $configFile = APP_ROOT . '/config/vercel.php';
+    } elseif (is_file(APP_ROOT . '/config/render.php')) {
+        $configFile = APP_ROOT . '/config/render.php';
+    }
+}
+if (!is_file($configFile)) {
+    http_response_code(503);
+    exit($isProduction
+        ? 'Production configuration is missing.'
+        : 'Local configuration is missing. Copy config/local.example.php to config/local.php and follow README.md.');
+}
+$config = require $configFile;
+if (!is_array($config)
+    || empty($config['auth_pepper'])
+    || empty($config['app_key'])
+    || strlen((string) $config['auth_pepper']) < 32
+    || strlen((string) $config['app_key']) < 32
+    || hash_equals((string) $config['auth_pepper'], (string) $config['app_key'])
+    || str_starts_with((string) $config['auth_pepper'], 'REPLACE_')
+    || str_starts_with((string) $config['app_key'], 'REPLACE_')) {
+    http_response_code(503);
+    exit($isProduction
+        ? 'Production secrets are not configured. Set unique AUTH_PEPPER and APP_KEY environment values.'
+        : 'Local secrets are not configured. Set unique auth_pepper and app_key values in config/local.php.');
+}
+$productionUrl = $isProduction ? parse_url((string) ($config['app_url'] ?? '')) : false;
+if ($isProduction && (
+    empty($config['app_url'])
+    || !is_array($productionUrl)
+    || strtolower((string) ($productionUrl['scheme'] ?? '')) !== 'https'
+    || empty($productionUrl['host'])
+    || empty($config['db']['host'])
+    || empty($config['db']['name'])
+    || empty($config['db']['user'])
+    || empty($config['db']['password'])
+    || filter_var((string) $config['db']['port'], FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 1, 'max_range' => 65535],
+    ]) === false
+)) {
+    http_response_code(503);
+    exit('Production application URL and database settings are not configured.');
+}
+
+$timezone = (string) ($config['timezone'] ?? 'Africa/Accra');
+try {
+    date_default_timezone_set($timezone);
+} catch (ValueError $exception) {
+    http_response_code(503);
+    error_log('Secure Auth timezone configuration is invalid: ' . $timezone);
+    exit('The local timezone configuration is invalid. Check config/local.php.');
+}
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+session_name('secure_auth_session');
+$forwardedProto = strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0]));
+$secureSession = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || ($isProduction && $forwardedProto === 'https');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => rtrim((string) parse_url((string) ($config['app_url'] ?? '/'), PHP_URL_PATH), '/') . '/',
+    'secure' => $secureSession,
+    'httponly' => true,
+    'samesite' => 'Strict',
+]);
+if ($isProduction && !empty(ini_get('session.save_path')) && !is_dir((string) ini_get('session.save_path'))) {
+    $tempSession = sys_get_temp_dir() . '/connezer_sessions';
+    if (!is_dir($tempSession)) {
+        @mkdir($tempSession, 0700, true);
+    }
+    if (is_dir($tempSession) && is_writable($tempSession)) {
+        session_save_path($tempSession);
+    }
+}
+session_start();
+
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: no-referrer');
+header('Permissions-Policy: camera=(), microphone=(self), geolocation=()');
+header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
+
+require_once APP_ROOT . '/app/functions.php';
+require_once APP_ROOT . '/app/school_tenant.php';
+require_once APP_ROOT . '/app/school_parent_links.php';
+require_once APP_ROOT . '/app/school_academic_calendar.php';
+require_once APP_ROOT . '/app/school_timetable.php';
+require_once APP_ROOT . '/app/school_admissions.php';
+require_once APP_ROOT . '/app/school_results.php';
+require_once APP_ROOT . '/app/school_notifications.php';
+require_once APP_ROOT . '/app/school_calendar.php';
+require_once APP_ROOT . '/app/school_learning.php';
+require_once APP_ROOT . '/app/school_ai.php';
+require_once APP_ROOT . '/app/views.php';
+
+if (!isset($_SESSION['user_id'])) {
+    restore_remembered_session();
+}
+
+$requestedRoute = basename((string) parse_url((string) ($_SERVER['SCRIPT_NAME'] ?? ''), PHP_URL_PATH));
+$requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+if ($requestMethod === 'POST'
+    && !in_array($requestedRoute, ['exit_it_support.php', 'logout.php'], true)
+    && !empty($_SESSION['it_support_session_id'])) {
+    $supportUser = current_user();
+    $supportContext = $supportUser !== null ? active_it_support_context($supportUser) : null;
+    if ($supportContext !== null) {
+        if (!it_support_write_allowed($supportContext, $requestedRoute)) {
+            audit((int) $supportUser['id'], 'it_support_write_denied', 'route=' . $requestedRoute);
+            http_response_code(403);
+            header('Content-Type: text/plain; charset=utf-8');
+            exit('This IT Support session does not authorize changes through this route.');
+        }
+        audit(
+            (int) $supportUser['id'],
+            'it_support_school_write_requested',
+            'route=' . $requestedRoute . ';access_mode=' . (string) $supportContext['access_mode']
+        );
+    }
+}
+
+$retiredRoutes = [
+    'admin.php',
+    'school_services.php',
+    'branding.php',
+    'branding_logo.php',
+    'community.php',
+    'config_restore.php',
+    'directory.php',
+    'general.php',
+    'job_attachment.php',
+    'jobs.php',
+    'member_import.php',
+    'membership_approvals.php',
+    'mentorship.php',
+    'messages.php',
+    'messages_api.php',
+    'news-photo.php',
+    'news.php',
+    'payment_receipt.php',
+    'roles.php',
+    'sidebar_badges.php',
+    'student.php',
+    'support.php',
+    'system_health.php',
+    'users.php',
+];
+if (in_array($requestedRoute, $retiredRoutes, true)) {
+    http_response_code(410);
+    header('Content-Type: text/plain; charset=utf-8');
+    exit('This legacy feature is no longer part of CONNEZER EDUTECH SYSTEMS.');
+}
