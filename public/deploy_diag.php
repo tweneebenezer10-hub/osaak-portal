@@ -92,35 +92,41 @@ if ($action === 'sync_schema') {
         exit;
     }
 
-    // Split schema into individual CREATE TABLE statements
+    // Split statements by semicolon at the end of line
+    $rawStatements = preg_split('/;\s*(\r?\n|$)/', $sqlContent);
+
     $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
 
-    // Match each CREATE TABLE block
-    preg_match_all('/CREATE TABLE\s+`?([a-zA-Z0-9_]+)`?\s*\((?:[^;]*?)\)\s*ENGINE=[^;]+;/s', $sqlContent, $matches, PREG_SET_ORDER);
+    $tableStatements = [];
+    foreach ($rawStatements as $rawStmt) {
+        $trimmed = trim($rawStmt);
+        if (preg_match('/^CREATE TABLE\s+`?([a-zA-Z0-9_]+)`?/i', $trimmed, $m)) {
+            $tableName = $m[1];
+            // Replace CREATE TABLE with CREATE TABLE IF NOT EXISTS
+            $safeStmt = preg_replace('/^CREATE TABLE\s+/i', 'CREATE TABLE IF NOT EXISTS ', $trimmed);
+            $tableStatements[] = [
+                'name' => $tableName,
+                'sql' => $safeStmt,
+            ];
+        }
+    }
+
+    $offset = (int) ($_GET['offset'] ?? 0);
+    $limit = (int) ($_GET['limit'] ?? 100);
+    $slice = array_slice($tableStatements, $offset, $limit);
 
     $created = [];
-    $alreadyExisted = [];
     $errors = [];
 
-    // Optional batch parameters: offset and limit
-    $offset = (int) ($_GET['offset'] ?? 0);
-    $limit = (int) ($_GET['limit'] ?? 50);
-    $slice = array_slice($matches, $offset, $limit);
-
-    foreach ($slice as $match) {
-        $tableName = $match[1];
-        $statement = $match[0];
-
-        // Replace CREATE TABLE with CREATE TABLE IF NOT EXISTS
-        $safeStatement = preg_replace('/^CREATE TABLE\s+/i', 'CREATE TABLE IF NOT EXISTS ', $statement);
-
+    foreach ($slice as $item) {
+        $tableName = $item['name'];
         try {
-            $pdo->exec($safeStatement);
+            $pdo->exec($item['sql']);
             $created[] = $tableName;
         } catch (PDOException $e) {
             $code = (int) ($e->errorInfo[1] ?? 0);
             if ($code === 1050) {
-                $alreadyExisted[] = $tableName;
+                $created[] = $tableName . ' (already exists)';
             } else {
                 $errors[] = [
                     'table' => $tableName,
@@ -140,7 +146,7 @@ if ($action === 'sync_schema') {
         'offset' => $offset,
         'limit' => $limit,
         'processed_in_batch' => count($slice),
-        'total_tables_in_file' => count($matches),
+        'total_tables_in_file' => count($tableStatements),
         'created_or_verified' => count($created),
         'errors' => $errors,
         'total_tables_now_in_db' => count($allTables),
