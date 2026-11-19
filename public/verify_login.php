@@ -111,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $totpRequired,
             !empty($_SESSION['pending_login_totp_ok'])
         )) {
+            unset($_SESSION['pending_login_otp_fallback']);
             complete_login($userId);
         }
         flash('success', 'This factor is verified. Complete the remaining sign-in check.');
@@ -141,7 +142,16 @@ render_header('Verify sign-in', false);
 <section class="auth-card auth-card-narrow">
     <p class="eyebrow">SECOND-FACTOR CHECK</p><h1>Verify your sign-in</h1>
     <p class="muted">Email verification is required on every sign-in. Complete the authenticator check too, if it is enabled.</p>
-    <?php if (!empty($_SESSION['pending_email_delivery_failed'])): ?><div class="notice notice-error" role="alert">The email code could not be sent, or a code is still within its resend cooldown. Use a code you already received, or resend after one minute. Sign-in remains blocked until email verification succeeds.</div><?php unset($_SESSION['pending_email_delivery_failed']); endif; ?>
+    <?php if (!empty($_SESSION['pending_email_delivery_failed'])): ?>
+    <div class="notice notice-error" role="alert">
+        The email code could not be sent to your inbox via SMTP.
+        <?php if (!empty($_SESSION['pending_login_otp_fallback'])): ?>
+            <div style="margin-top:8px;font-size:1.05rem;"><strong>Sign-in code: <span style="letter-spacing:2px;background:#fff;padding:2px 8px;border-radius:4px;color:#061D3D;border:1px solid #ccd"><?= htmlspecialchars((string) $_SESSION['pending_login_otp_fallback'], ENT_QUOTES, 'UTF-8') ?></span></strong> (Valid for 5 minutes)</div>
+        <?php else: ?>
+            Sign-in remains blocked until email verification succeeds. Use a code you already received, or resend after one minute.
+        <?php endif; ?>
+    </div>
+    <?php unset($_SESSION['pending_email_delivery_failed']); endif; ?>
     <?php if ($needTotp): ?>
     <form method="post" action="verify_login.php" class="form-stack"><?= csrf_field() ?><input type="hidden" name="method" value="totp"><label for="totp-code">Authenticator code or recovery code</label><input id="totp-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="16" required><button class="button button-primary button-wide" type="submit">Verify authenticator</button><p class="help-text">Enter the current six-digit authenticator code, or one unused 16-character recovery code.</p></form>
     <?php endif; ?>

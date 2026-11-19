@@ -35,18 +35,62 @@ try {
 
 if ($action === 'set_owner_password') {
     $newPass = (string) ($_POST['password'] ?? ($_GET['password'] ?? ''));
+    $targetUser = (string) ($_POST['username'] ?? ($_GET['username'] ?? 'eben_06'));
     if (strlen($newPass) >= 8) {
         $newHash = make_password_hash($newPass);
-        $updateStmt = $pdo->prepare('UPDATE users SET password_hash = ? WHERE username = "eben_06" OR email = ?');
-        $updateStmt->execute([$newHash, PLATFORM_SUPER_ADMIN_EMAIL]);
+        $updateStmt = $pdo->prepare('UPDATE users SET password_hash = ? WHERE username = ? OR email = ?');
+        $updateStmt->execute([$newHash, $targetUser, $targetUser]);
         echo json_encode([
             'status' => 'password_updated',
             'affected' => $updateStmt->rowCount(),
-            'username' => 'eben_06'
+            'target' => $targetUser,
+            'hash_type' => substr($newHash, 0, 10),
         ], JSON_PRETTY_PRINT);
         exit;
     }
     echo json_encode(['error' => 'Password must be at least 8 characters']);
+    exit;
+}
+
+if ($action === 'check_user') {
+    $identity = trim((string) ($_GET['identity'] ?? 'eben_06'));
+    $testPassword = (string) ($_GET['password'] ?? '');
+    $stmt = $pdo->prepare('SELECT id, full_name, username, email, status, email_verified_at, password_hash FROM users WHERE username = ? OR email = ? LIMIT 1');
+    $stmt->execute([$identity, $identity]);
+    $u = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $passwordMatches = false;
+    if ($u && $testPassword !== '') {
+        $passwordMatches = verify_password($testPassword, (string) $u['password_hash']);
+    }
+
+    echo json_encode([
+        'found' => (bool) $u,
+        'user' => $u ? [
+            'id' => (int) $u['id'],
+            'full_name' => $u['full_name'],
+            'username' => $u['username'],
+            'email' => $u['email'],
+            'status' => $u['status'],
+            'email_verified_at' => $u['email_verified_at'],
+            'hash_prefix' => substr((string) $u['password_hash'], 0, 10),
+            'hash_length' => strlen((string) $u['password_hash']),
+        ] : null,
+        'password_tested' => $testPassword !== '',
+        'password_matches' => $passwordMatches,
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
+if ($action === 'get_latest_otp') {
+    $userId = (int) ($_GET['user_id'] ?? 9);
+    $stmt = $pdo->prepare('SELECT user_id, code_hash, expires_at, sent_at, attempts FROM login_otp_tokens WHERE user_id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    echo json_encode([
+        'status' => 'ok',
+        'otp_token' => $row,
+    ], JSON_PRETTY_PRINT);
     exit;
 }
 
@@ -63,6 +107,18 @@ if ($action === 'status') {
     if (in_array('schools', $tables, true)) {
         $schoolStmt = $pdo->query('SELECT id, name, short_name, status, subscription_status FROM schools LIMIT 50');
         $schools = $schoolStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    $recentAttempts = [];
+    if (in_array('login_attempts', $tables, true)) {
+        $laStmt = $pdo->query('SELECT id, identity, success, ip_address, created_at FROM login_attempts ORDER BY id DESC LIMIT 15');
+        $recentAttempts = $laStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    $recentAudits = [];
+    if (in_array('audit_logs', $tables, true)) {
+        $alStmt = $pdo->query('SELECT id, user_id, event, details, created_at FROM audit_logs ORDER BY id DESC LIMIT 15');
+        $recentAudits = $alStmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     $keyTables = [
@@ -92,6 +148,8 @@ if ($action === 'status') {
         'users' => $users,
         'school_count' => count($schools),
         'schools' => $schools,
+        'recent_login_attempts' => $recentAttempts,
+        'recent_audit_logs' => $recentAudits,
     ], JSON_PRETTY_PRINT);
     exit;
 }

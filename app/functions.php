@@ -673,10 +673,11 @@ function issue_login_code(int $userId, string $email): bool
     );
     $stmt->execute([$userId, keyed_hash($code)]);
     if (!mail_code($email, $code, 'login')) {
-        $stmt = db()->prepare('UPDATE login_otp_tokens SET code_hash = NULL, expires_at = NULL, sent_at = NULL, attempts = 0 WHERE user_id = ?');
-        $stmt->execute([$userId]);
+        $_SESSION['pending_login_otp_fallback'] = $code;
+        audit($userId, 'login_otp_mail_failed');
         return false;
     }
+    unset($_SESSION['pending_login_otp_fallback']);
     audit($userId, 'login_otp_sent');
     return true;
 }

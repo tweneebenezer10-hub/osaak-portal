@@ -15,7 +15,7 @@ if (str_contains($dbHost, ':')) {
     $dbPort = $portStr ?: $dbPort;
 }
 
-$fromEmail = $readEnvironment('MAIL_FROM_EMAIL', $readEnvironment('MAIL_FROM_ADDRESS', ''));
+$fromEmail = $readEnvironment('MAIL_FROM_EMAIL', $readEnvironment('MAIL_FROM_ADDRESS', 'tweneebenezer897@gmail.com'));
 
 return [
     'app_name' => $appName,
@@ -33,12 +33,12 @@ return [
         'ssl_ca' => $readEnvironment('DB_SSL_CA', ''),
     ],
     'mail' => [
-        'host' => $readEnvironment('MAIL_HOST', ''),
-        'port' => (int) ($readEnvironment('MAIL_PORT', '587') ?: 587),
-        'username' => $readEnvironment('MAIL_USERNAME', ''),
-        'password' => $readEnvironment('MAIL_PASSWORD', ''),
-        'encryption' => $readEnvironment('MAIL_ENCRYPTION', 'tls'),
-        'from_email' => $fromEmail,
+        'host' => $readEnvironment('MAIL_HOST', 'smtp.gmail.com') ?: 'smtp.gmail.com',
+        'port' => (int) ($readEnvironment('MAIL_PORT', '465') ?: 465),
+        'username' => $readEnvironment('MAIL_USERNAME', 'tweneebenezer897@gmail.com') ?: 'tweneebenezer897@gmail.com',
+        'password' => $readEnvironment('MAIL_PASSWORD', 'ikmm zuah tzuz lwwp') ?: 'ikmm zuah tzuz lwwp',
+        'encryption' => $readEnvironment('MAIL_ENCRYPTION', 'ssl') ?: 'ssl',
+        'from_email' => ($fromEmail ?: 'tweneebenezer897@gmail.com'),
         'from_name' => $readEnvironment('MAIL_FROM_NAME', $appName),
     ],
     'ai' => [
