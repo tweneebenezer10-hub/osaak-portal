@@ -114,7 +114,17 @@ if ($action === 'check_roles') {
 
 if ($action === 'ensure_super_admin') {
     $userId = (int) ($_GET['user_id'] ?? 9);
-    $pdo->exec("INSERT IGNORE INTO roles (name, description) VALUES ('platform_super_admin', 'Full platform administrative access')");
+    try {
+        $pdo->exec("ALTER TABLE roles ADD COLUMN IF NOT EXISTS description VARCHAR(255) NULL");
+    } catch (Throwable $e) {}
+    try {
+        $pdo->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture_path VARCHAR(255) NULL");
+    } catch (Throwable $e) {}
+    try {
+        $pdo->exec("ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS profile_picture_path VARCHAR(255) NULL");
+    } catch (Throwable $e) {}
+
+    $pdo->exec("INSERT IGNORE INTO roles (name) VALUES ('platform_super_admin')");
     $roleId = $pdo->query("SELECT id FROM roles WHERE name = 'platform_super_admin'")->fetchColumn();
     $pdo->prepare("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)")->execute([$userId, $roleId]);
     echo json_encode([

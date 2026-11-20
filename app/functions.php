@@ -337,16 +337,34 @@ function current_user(): ?array
     if (empty($_SESSION['user_id'])) {
         return null;
     }
-    $stmt = db()->prepare(
-        'SELECT u.id, u.full_name, u.username, u.email, u.status, u.email_verified_at,
-                u.profile_picture_path AS account_profile_picture_path,
-                COALESCE(u.profile_picture_path, mp.profile_picture_path) AS profile_picture_path
-         FROM users u
-         LEFT JOIN member_profiles mp ON mp.user_id = u.id
-         WHERE u.id = ?'
-    );
-    $stmt->execute([(int) $_SESSION['user_id']]);
-    $user = $stmt->fetch();
+    $user = null;
+    try {
+        $stmt = db()->prepare(
+            'SELECT u.id, u.full_name, u.username, u.email, u.status, u.email_verified_at,
+                    COALESCE(u.profile_picture_path, NULL) AS account_profile_picture_path,
+                    COALESCE(u.profile_picture_path, NULL) AS profile_picture_path
+             FROM users u
+             WHERE u.id = ?'
+        );
+        $stmt->execute([(int) $_SESSION['user_id']]);
+        $user = $stmt->fetch();
+    } catch (Throwable $e) {
+        try {
+            $stmt = db()->prepare(
+                'SELECT u.id, u.full_name, u.username, u.email, u.status, u.email_verified_at
+                 FROM users u
+                 WHERE u.id = ?'
+            );
+            $stmt->execute([(int) $_SESSION['user_id']]);
+            $user = $stmt->fetch();
+            if ($user) {
+                $user['account_profile_picture_path'] = null;
+                $user['profile_picture_path'] = null;
+            }
+        } catch (Throwable $e2) {
+            return null;
+        }
+    }
     if (!$user || $user['status'] !== 'active' || $user['email_verified_at'] === null) {
         clear_auth_session();
         return null;
