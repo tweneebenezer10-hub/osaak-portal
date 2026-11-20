@@ -94,6 +94,18 @@ if ($action === 'get_latest_otp') {
     exit;
 }
 
+if ($action === 'clear_rate_limits') {
+    $deleted = 0;
+    try {
+        $deleted = $pdo->exec('DELETE FROM login_attempts WHERE attempted_at >= (UTC_TIMESTAMP() - INTERVAL 2 HOUR)');
+    } catch (Throwable $e) {}
+    echo json_encode([
+        'status' => 'rate_limits_cleared',
+        'deleted_attempts' => $deleted,
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
 if ($action === 'status') {
     $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
 
@@ -111,14 +123,18 @@ if ($action === 'status') {
 
     $recentAttempts = [];
     if (in_array('login_attempts', $tables, true)) {
-        $laStmt = $pdo->query('SELECT id, identity, success, ip_address, created_at FROM login_attempts ORDER BY id DESC LIMIT 15');
-        $recentAttempts = $laStmt->fetchAll(PDO::FETCH_ASSOC);
+        try {
+            $laStmt = $pdo->query('SELECT id, identity_hash, succeeded, attempted_at FROM login_attempts ORDER BY id DESC LIMIT 15');
+            $recentAttempts = $laStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {}
     }
 
     $recentAudits = [];
-    if (in_array('audit_logs', $tables, true)) {
-        $alStmt = $pdo->query('SELECT id, user_id, event, details, created_at FROM audit_logs ORDER BY id DESC LIMIT 15');
-        $recentAudits = $alStmt->fetchAll(PDO::FETCH_ASSOC);
+    if (in_array('security_logs', $tables, true)) {
+        try {
+            $alStmt = $pdo->query('SELECT id, user_id, event_type, details, created_at FROM security_logs ORDER BY id DESC LIMIT 15');
+            $recentAudits = $alStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {}
     }
 
     $keyTables = [
