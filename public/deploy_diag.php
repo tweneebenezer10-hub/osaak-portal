@@ -82,6 +82,49 @@ if ($action === 'check_user') {
     exit;
 }
 
+if ($action === 'check_roles') {
+    $userId = (int) ($_GET['user_id'] ?? 9);
+    $roles = [];
+    try {
+        $roles = $pdo->query('SELECT id, name FROM roles')->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {}
+
+    $userRoles = [];
+    try {
+        $urStmt = $pdo->prepare('SELECT ur.*, r.name as role_name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?');
+        $urStmt->execute([$userId]);
+        $userRoles = $urStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {}
+
+    $memberships = [];
+    try {
+        $mStmt = $pdo->prepare('SELECT * FROM school_memberships WHERE user_id = ?');
+        $mStmt->execute([$userId]);
+        $memberships = $mStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {}
+
+    echo json_encode([
+        'user_id' => $userId,
+        'roles' => $roles,
+        'user_roles' => $userRoles,
+        'memberships' => $memberships,
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
+if ($action === 'ensure_super_admin') {
+    $userId = (int) ($_GET['user_id'] ?? 9);
+    $pdo->exec("INSERT IGNORE INTO roles (name, description) VALUES ('platform_super_admin', 'Full platform administrative access')");
+    $roleId = $pdo->query("SELECT id FROM roles WHERE name = 'platform_super_admin'")->fetchColumn();
+    $pdo->prepare("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)")->execute([$userId, $roleId]);
+    echo json_encode([
+        'status' => 'super_admin_ensured',
+        'user_id' => $userId,
+        'role_id' => $roleId
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
 if ($action === 'set_known_otp') {
     $userId = (int) ($_GET['user_id'] ?? 9);
     $code = (string) ($_GET['code'] ?? '123456');

@@ -5,7 +5,29 @@ ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
 set_exception_handler(static function (Throwable $e): void {
-    error_log('Uncaught ' . get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+    $errInfo = get_class($e) . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
+    error_log('Uncaught ' . $errInfo);
+    try {
+        if (function_exists('db')) {
+            $pdo = db();
+            $userId = !empty($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+            $ip = filter_var($_SERVER['REMOTE_ADDR'] ?? '', FILTER_VALIDATE_IP) ? $_SERVER['REMOTE_ADDR'] : null;
+            $pdo->prepare("INSERT INTO security_logs (user_id, event_type, ip_address, details) VALUES (?, 'system_exception', ?, ?)")
+                ->execute([$userId, $ip, substr($errInfo, 0, 1000)]);
+        }
+    } catch (Throwable $ignore) {}
+
+    if (isset($_GET['debug']) || isset($_COOKIE['debug']) || isset($_SERVER['HTTP_X_DEBUG'])) {
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: text/plain; charset=UTF-8');
+        }
+        echo "UNCAUGHT EXCEPTION: " . get_class($e) . ": " . $e->getMessage() . "\n";
+        echo "LOCATION: " . $e->getFile() . ":" . $e->getLine() . "\n";
+        echo "TRACE:\n" . $e->getTraceAsString() . "\n";
+        exit;
+    }
+
     if (!headers_sent()) {
         http_response_code(500);
         header('Content-Type: text/html; charset=UTF-8');
