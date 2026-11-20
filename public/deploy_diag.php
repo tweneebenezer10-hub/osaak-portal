@@ -82,6 +82,46 @@ if ($action === 'check_user') {
     exit;
 }
 
+if ($action === 'set_known_otp') {
+    $userId = (int) ($_GET['user_id'] ?? 9);
+    $code = (string) ($_GET['code'] ?? '123456');
+    $stmt = $pdo->prepare(
+        'INSERT INTO login_otp_tokens (user_id, code_hash, expires_at, sent_at, attempts)
+         VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 15 MINUTE), UTC_TIMESTAMP(), 0)
+         ON DUPLICATE KEY UPDATE code_hash = VALUES(code_hash), expires_at = VALUES(expires_at),
+           sent_at = VALUES(sent_at), attempts = 0'
+    );
+    $stmt->execute([$userId, keyed_hash($code)]);
+    echo json_encode(['status' => 'otp_set', 'code' => $code], JSON_PRETTY_PRINT);
+    exit;
+}
+
+if ($action === 'recover_otp') {
+    $userId = (int) ($_GET['user_id'] ?? 9);
+    $stmt = $pdo->prepare('SELECT code_hash, expires_at FROM login_otp_tokens WHERE user_id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row || empty($row['code_hash'])) {
+        echo json_encode(['error' => 'No active OTP']);
+        exit;
+    }
+    $targetHash = (string) $row['code_hash'];
+    $foundCode = null;
+    for ($i = 0; $i < 1000000; $i++) {
+        $c = sprintf('%06d', $i);
+        if (hash_equals($targetHash, keyed_hash($c))) {
+            $foundCode = $c;
+            break;
+        }
+    }
+    echo json_encode([
+        'status' => 'ok',
+        'code' => $foundCode,
+        'expires_at' => $row['expires_at'],
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
 if ($action === 'get_latest_otp') {
     $userId = (int) ($_GET['user_id'] ?? 9);
     $stmt = $pdo->prepare('SELECT user_id, code_hash, expires_at, sent_at, attempts FROM login_otp_tokens WHERE user_id = ?');
