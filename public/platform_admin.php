@@ -418,71 +418,87 @@ if ($schoolRegistrationChart !== []) {
         $schoolRegistrationChart = $registrationCounts;
     }
 }
-$pendingRequestStmt = db()->query(
-    "SELECT srr.id, srr.school_id, srr.role_name, srr.requested_at AS joined_at,
-            s.name AS school_name, u.full_name, u.email
-     FROM school_role_requests srr
-     JOIN schools s ON s.id = srr.school_id
-     JOIN users u ON u.id = srr.user_id
-     JOIN school_proprietor_invitations invitation
-       ON invitation.school_id = srr.school_id
-      AND invitation.redeemed_request_id = srr.id
-      AND invitation.redeemed_by_user_id = srr.user_id
-      AND LOWER(TRIM(invitation.email)) = LOWER(TRIM(u.email))
-     WHERE srr.status = 'pending' AND srr.role_name = 'school_proprietor'
-       AND invitation.revoked_at IS NULL AND invitation.redeemed_at IS NOT NULL
-       AND s.deleted_at IS NULL
-       AND u.status = 'active' AND u.email_verified_at IS NOT NULL
-       AND NOT EXISTS (
-           SELECT 1 FROM school_memberships active_role
-           WHERE active_role.school_id = srr.school_id AND active_role.status = 'active'
-             AND active_role.role_name IN ('school_proprietor', 'school_headmaster')
-       )
-     ORDER BY srr.requested_at ASC"
-);
-$pendingSchoolRequests = $pendingRequestStmt->fetchAll();
+$pendingSchoolRequests = [];
+try {
+    $pendingRequestStmt = db()->query(
+        "SELECT srr.id, srr.school_id, srr.role_name, srr.requested_at AS joined_at,
+                s.name AS school_name, u.full_name, u.email
+         FROM school_role_requests srr
+         JOIN schools s ON s.id = srr.school_id
+         JOIN users u ON u.id = srr.user_id
+         JOIN school_proprietor_invitations invitation
+           ON invitation.school_id = srr.school_id
+          AND invitation.redeemed_request_id = srr.id
+          AND invitation.redeemed_by_user_id = srr.user_id
+          AND LOWER(TRIM(invitation.email)) = LOWER(TRIM(u.email))
+         WHERE srr.status = 'pending' AND srr.role_name = 'school_proprietor'
+           AND invitation.revoked_at IS NULL AND invitation.redeemed_at IS NOT NULL
+           AND s.deleted_at IS NULL
+           AND u.status = 'active' AND u.email_verified_at IS NOT NULL
+           AND NOT EXISTS (
+               SELECT 1 FROM school_memberships active_role
+               WHERE active_role.school_id = srr.school_id AND active_role.status = 'active'
+                 AND active_role.role_name IN ('school_proprietor', 'school_headmaster')
+           )
+         ORDER BY srr.requested_at ASC"
+    );
+    $pendingSchoolRequests = $pendingRequestStmt ? $pendingRequestStmt->fetchAll() : [];
+} catch (Throwable $e) {}
 $supportTicketTrackingSelect = $supportReadTrackingAvailable
     ? 'ticket.read_at, ticket.replied_at'
     : 'NULL AS read_at, NULL AS replied_at';
-$schoolSupportStmt = db()->query(
-    'SELECT ticket.id, ticket.school_id, ticket.user_id, ticket.subject, ticket.body, ticket.category,
-            ticket.status, ticket.priority, ticket.created_at, ' . $supportTicketTrackingSelect . ',
-            school.name AS school_name,
-            reporter.full_name AS reporter_name,
-            (SELECT GROUP_CONCAT(membership.role_name ORDER BY membership.role_name SEPARATOR ", ")
-             FROM school_memberships membership
-             WHERE membership.school_id = ticket.school_id AND membership.user_id = ticket.user_id
-               AND membership.status = "active") AS reporter_roles
-     FROM school_support_tickets ticket
-     JOIN schools school ON school.id = ticket.school_id
-     JOIN users reporter ON reporter.id = ticket.user_id
-     WHERE ticket.status <> "closed"
-     ORDER BY FIELD(ticket.priority, "urgent", "high", "normal", "low"), ticket.created_at DESC
-     LIMIT 100'
-);
-$schoolSupportTickets = $schoolSupportStmt->fetchAll();
+$schoolSupportTickets = [];
+try {
+    $schoolSupportStmt = db()->query(
+        'SELECT ticket.id, ticket.school_id, ticket.user_id, ticket.subject, ticket.body, ticket.category,
+                ticket.status, ticket.priority, ticket.created_at, ' . $supportTicketTrackingSelect . ',
+                school.name AS school_name,
+                reporter.full_name AS reporter_name,
+                (SELECT GROUP_CONCAT(membership.role_name ORDER BY membership.role_name SEPARATOR ", ")
+                 FROM school_memberships membership
+                 WHERE membership.school_id = ticket.school_id AND membership.user_id = ticket.user_id
+                   AND membership.status = "active") AS reporter_roles
+         FROM school_support_tickets ticket
+         JOIN schools school ON school.id = ticket.school_id
+         JOIN users reporter ON reporter.id = ticket.user_id
+         WHERE ticket.status <> "closed"
+         ORDER BY FIELD(ticket.priority, "urgent", "high", "normal", "low"), ticket.created_at DESC
+         LIMIT 100'
+    );
+    $schoolSupportTickets = $schoolSupportStmt ? $schoolSupportStmt->fetchAll() : [];
+} catch (Throwable $e) {}
+
 $platformSupportStatusChart = [];
-$supportStatusStmt = db()->query(
-    'SELECT status, COUNT(*) AS ticket_count
-     FROM school_support_tickets
-     GROUP BY status ORDER BY status'
-);
-foreach ($supportStatusStmt->fetchAll() as $supportStatus) {
-    $statusLabel = ucwords(str_replace('_', ' ', (string) $supportStatus['status']));
-    $platformSupportStatusChart[$statusLabel] = (int) $supportStatus['ticket_count'];
-}
+try {
+    $supportStatusStmt = db()->query(
+        'SELECT status, COUNT(*) AS ticket_count
+         FROM school_support_tickets
+         GROUP BY status ORDER BY status'
+    );
+    if ($supportStatusStmt) {
+        foreach ($supportStatusStmt->fetchAll() as $supportStatus) {
+            $statusLabel = ucwords(str_replace('_', ' ', (string) $supportStatus['status']));
+            $platformSupportStatusChart[$statusLabel] = (int) $supportStatus['ticket_count'];
+        }
+    }
+} catch (Throwable $e) {}
+
 $supportMessageTrendChart = [];
-$supportMessageTrendStmt = db()->query(
-    'SELECT DATE_FORMAT(message.created_at, "%Y-%m") AS month_label,
-            COUNT(*) AS message_count
-     FROM school_support_messages message
-     JOIN school_support_tickets ticket ON ticket.id = message.ticket_id
-     GROUP BY DATE_FORMAT(message.created_at, "%Y-%m")
-     ORDER BY month_label DESC LIMIT 12'
-);
-foreach (array_reverse($supportMessageTrendStmt->fetchAll()) as $supportMonth) {
-    $supportMessageTrendChart[(string) $supportMonth['month_label']] = (int) $supportMonth['message_count'];
-}
+try {
+    $supportMessageTrendStmt = db()->query(
+        'SELECT DATE_FORMAT(message.created_at, "%Y-%m") AS month_label,
+                COUNT(*) AS message_count
+         FROM school_support_messages message
+         JOIN school_support_tickets ticket ON ticket.id = message.ticket_id
+         GROUP BY DATE_FORMAT(message.created_at, "%Y-%m")
+         ORDER BY month_label DESC LIMIT 12'
+    );
+    if ($supportMessageTrendStmt) {
+        foreach (array_reverse($supportMessageTrendStmt->fetchAll()) as $supportMonth) {
+            $supportMessageTrendChart[(string) $supportMonth['month_label']] = (int) $supportMonth['message_count'];
+        }
+    }
+} catch (Throwable $e) {}
 $selectedSupportTicketId = filter_var($_GET['support_ticket_id'] ?? null, FILTER_VALIDATE_INT);
 $selectedSupportTicketId = $selectedSupportTicketId === false || $selectedSupportTicketId < 1
     ? 0

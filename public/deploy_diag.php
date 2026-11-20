@@ -124,6 +124,61 @@ if ($action === 'ensure_super_admin') {
         $pdo->exec("ALTER TABLE member_profiles ADD COLUMN IF NOT EXISTS profile_picture_path VARCHAR(255) NULL");
     } catch (Throwable $e) {}
 
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS school_proprietor_invitations (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            school_id bigint(20) unsigned NOT NULL,
+            email varchar(254) NOT NULL,
+            token_hash char(64) NOT NULL,
+            created_by_user_id bigint(20) unsigned NOT NULL,
+            created_at datetime NOT NULL DEFAULT current_timestamp(),
+            expires_at datetime NOT NULL,
+            revoked_at datetime DEFAULT NULL,
+            redeemed_by_user_id bigint(20) unsigned DEFAULT NULL,
+            redeemed_request_id bigint(20) unsigned DEFAULT NULL,
+            redeemed_at datetime DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_school_proprietor_invitation_token (token_hash),
+            KEY idx_school_proprietor_invitation_active (school_id,revoked_at,redeemed_at,expires_at),
+            KEY fk_school_proprietor_invitation_creator (created_by_user_id)
+        ) ENGINE=InnoDB");
+    } catch (Throwable $e) {}
+
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS school_support_tickets (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            school_id bigint(20) unsigned NOT NULL,
+            user_id bigint(20) unsigned NOT NULL,
+            subject varchar(200) NOT NULL,
+            body text NOT NULL,
+            category enum('general','academic','billing','technical','admissions','other') NOT NULL DEFAULT 'general',
+            status enum('open','in_progress','resolved','closed') NOT NULL DEFAULT 'open',
+            priority enum('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+            read_at datetime DEFAULT NULL,
+            read_by_user_id bigint(20) unsigned DEFAULT NULL,
+            replied_at datetime DEFAULT NULL,
+            created_at datetime NOT NULL DEFAULT current_timestamp(),
+            updated_at datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+            PRIMARY KEY (id),
+            KEY idx_school_support_tickets_school (school_id, status)
+        ) ENGINE=InnoDB");
+    } catch (Throwable $e) {}
+
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS school_support_messages (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            ticket_id bigint(20) unsigned NOT NULL,
+            user_id bigint(20) unsigned NOT NULL,
+            message text NOT NULL,
+            read_at datetime DEFAULT NULL,
+            read_by_user_id bigint(20) unsigned DEFAULT NULL,
+            request_key varchar(64) DEFAULT NULL,
+            created_at datetime NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (id),
+            KEY idx_school_support_messages_ticket (ticket_id)
+        ) ENGINE=InnoDB");
+    } catch (Throwable $e) {}
+
     $pdo->exec("INSERT IGNORE INTO roles (name) VALUES ('platform_super_admin')");
     $roleId = $pdo->query("SELECT id FROM roles WHERE name = 'platform_super_admin'")->fetchColumn();
     $pdo->prepare("INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)")->execute([$userId, $roleId]);
