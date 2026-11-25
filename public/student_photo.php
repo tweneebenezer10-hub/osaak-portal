@@ -46,14 +46,8 @@ if (!is_string($photoPath)
     http_response_code(404);
     exit;
 }
-$imagePath = APP_ROOT . '/storage/' . $photoPath;
 $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$matches[1]];
-if (!is_file($imagePath) || !is_readable($imagePath)) {
+if (!serve_stored_image($photoPath, $mime, 'private, no-store')) {
     http_response_code(404);
     exit;
 }
-header('Content-Type: ' . $mime);
-header('Content-Length: ' . (string) filesize($imagePath));
-header('Cache-Control: private, no-store');
-header('X-Content-Type-Options: nosniff');
-readfile($imagePath);

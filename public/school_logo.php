@@ -59,24 +59,15 @@ if (!is_string($relativePath)
     exit;
 }
 
-$imagePath = APP_ROOT . '/storage/' . $relativePath;
-if (!is_file($imagePath) || !is_readable($imagePath)) {
-    http_response_code(404);
-    exit;
-}
-
 $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$matches[1]];
 $reportCardVariant = (string) ($_GET['variant'] ?? '') === 'report_card';
 if ($reportCardVariant && $matches[1] === 'jpg') {
     $transparentRelativePath = substr($relativePath, 0, -4) . '.png';
-    $transparentImagePath = APP_ROOT . '/storage/' . $transparentRelativePath;
-    if (is_file($transparentImagePath) && is_readable($transparentImagePath)) {
-        $imagePath = $transparentImagePath;
-        $mime = 'image/png';
+    if (serve_stored_image($transparentRelativePath, 'image/png', 'private, max-age=60')) {
+        exit;
     }
 }
-header('Content-Type: ' . $mime);
-header('Content-Length: ' . (string) filesize($imagePath));
-header('Cache-Control: private, max-age=60');
-header('X-Content-Type-Options: nosniff');
-readfile($imagePath);
+if (!serve_stored_image($relativePath, $mime, 'private, max-age=60')) {
+    http_response_code(404);
+    exit;
+}

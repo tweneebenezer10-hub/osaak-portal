@@ -272,6 +272,25 @@ if ($action === 'profile_render') {
     exit;
 }
 
+if ($action === 'upload_media') {
+    $relPath = ltrim((string) ($_POST['relative_path'] ?? ''), '/');
+    $mime = (string) ($_POST['mime_type'] ?? 'application/octet-stream');
+    $b64 = (string) ($_POST['content_base64'] ?? '');
+    $bytes = base64_decode($b64, true);
+    if ($relPath === '' || !is_string($bytes) || $bytes === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid relative_path or content_base64']);
+        exit;
+    }
+    save_stored_media($relPath, $mime, $bytes);
+    echo json_encode([
+        'status' => 'uploaded',
+        'relative_path' => $relPath,
+        'bytes' => strlen($bytes),
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
 if ($action === 'get_latest_otp') {
     $userId = (int) ($_GET['user_id'] ?? 9);
     $stmt = $pdo->prepare('SELECT user_id, code_hash, expires_at, sent_at, attempts FROM login_otp_tokens WHERE user_id = ?');

@@ -25,14 +25,8 @@ if (!is_string($relativePath)
     http_response_code(404);
     exit;
 }
-$imagePath = APP_ROOT . '/storage/' . $relativePath;
-if (!is_file($imagePath) || !is_readable($imagePath)) {
+$mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$matches[1]];
+if (!serve_stored_image($relativePath, $mime, 'private, no-store')) {
     http_response_code(404);
     exit;
 }
-$mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$matches[1]];
-header('Content-Type: ' . $mime);
-header('Content-Length: ' . (string) filesize($imagePath));
-header('Cache-Control: private, no-store');
-header('X-Content-Type-Options: nosniff');
-readfile($imagePath);
