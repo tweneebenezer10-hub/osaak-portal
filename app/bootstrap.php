@@ -159,6 +159,7 @@ require_once APP_ROOT . '/app/school_notifications.php';
 require_once APP_ROOT . '/app/school_calendar.php';
 require_once APP_ROOT . '/app/school_learning.php';
 require_once APP_ROOT . '/app/school_ai.php';
+require_once APP_ROOT . '/app/image_uploads.php';
 require_once APP_ROOT . '/app/views.php';
 
 if (!isset($_SESSION['user_id'])) {
