@@ -447,6 +447,13 @@ function school_designate_proprietor_account(
 
 function school_user_roles_for_school(int $userId, int $schoolId): array
 {
+    static $cache = [];
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    $cacheKey = $userId . ':' . $schoolId;
+    if ($isReadOnly && isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
     $employmentFilter = '';
     $params = [$userId, $schoolId];
     if (school_staff_employment_schema_ready()) {
@@ -469,10 +476,14 @@ function school_user_roles_for_school(int $userId, int $schoolId): array
          ORDER BY id'
     );
     $stmt->execute($params);
-    return array_values(array_filter(
+    $roles = array_values(array_filter(
         array_map('strval', $stmt->fetchAll(PDO::FETCH_COLUMN)),
         static fn(string $role): bool => $role !== ''
     ));
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $roles;
+    }
+    return $roles;
 }
 
 function notify_school_role_reviewers(int $schoolId, int $requesterId, string $roleName): string
