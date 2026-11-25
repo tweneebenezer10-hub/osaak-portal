@@ -580,7 +580,22 @@ if ($action === 'sync_schema') {
                 $tableOk = true;
             } elseif (in_array($code, [1215, 1822, 3734], true)) {
                 // Retry creating table without inline FOREIGN KEY constraints
-                $noFkSql = preg_replace('/,\s*\r?\n\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN KEY[^\r\n]*/i', '', $item['sql']);
+                $noFkSql = $item['sql'];
+                if (preg_match('/^([\s\S]*?\()\s*([\s\S]+?)\s*(\)\s*ENGINE=[\s\S]*)$/i', $item['sql'], $tm)) {
+                    $lines = preg_split('/\r?\n/', $tm[2]);
+                    $kept = [];
+                    foreach ($lines as $ln) {
+                        if (preg_match('/^\s*(?:CONSTRAINT\s+`[^`]+`\s+)?FOREIGN KEY\b/i', $ln)) {
+                            continue;
+                        }
+                        $kept[] = $ln;
+                    }
+                    if ($kept !== []) {
+                        $lastIdx = count($kept) - 1;
+                        $kept[$lastIdx] = rtrim(rtrim($kept[$lastIdx]), ',');
+                        $noFkSql = $tm[1] . "\n" . implode("\n", $kept) . "\n" . $tm[3];
+                    }
+                }
                 try {
                     $pdo->exec((string) $noFkSql);
                     $created[] = $tableName . ' (created without FK)';
