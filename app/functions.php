@@ -866,10 +866,11 @@ function role_home(array $user): string
         return 'platform_admin.php';
     }
     $stmt = db()->prepare(
-        'SELECT DISTINCT school_id
+        'SELECT school_id
          FROM school_memberships
          WHERE user_id = ? AND status = ?
-         ORDER BY id'
+         GROUP BY school_id
+         ORDER BY MIN(id)'
     );
     $stmt->execute([(int) ($user['id'] ?? 0), 'active']);
     $activeMemberships = $stmt->fetchAll(PDO::FETCH_COLUMN);

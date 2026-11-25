@@ -494,18 +494,21 @@ if ($action === 'sync_schema') {
         exit;
     }
 
-    // Split statements by semicolon at the end of line
-    $rawStatements = preg_split('/;\s*(\r?\n|$)/', $sqlContent);
+    // Strip SQL comments and MySQL conditional comments before splitting
+    $cleanSql = preg_replace('/^--.*$/m', '', $sqlContent);
+    $cleanSql = preg_replace('/\/\*![\s\S]*?\*\/\s*;?/', '', (string) $cleanSql);
+    $rawStatements = preg_split('/;\s*(\r?\n|$)/', (string) $cleanSql);
 
     $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
 
     $tableStatements = [];
     foreach ($rawStatements as $rawStmt) {
         $trimmed = trim($rawStmt);
-        if (preg_match('/^CREATE TABLE\s+`?([a-zA-Z0-9_]+)`?/i', $trimmed, $m)) {
+        if (preg_match('/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?`?([a-zA-Z0-9_]+)`?/i', $trimmed, $m)) {
             $tableName = $m[1];
-            // Replace CREATE TABLE with CREATE TABLE IF NOT EXISTS
-            $safeStmt = preg_replace('/^CREATE TABLE\s+/i', 'CREATE TABLE IF NOT EXISTS ', $trimmed);
+            $pos = stripos($trimmed, 'CREATE TABLE');
+            $stmtBody = $pos !== false ? substr($trimmed, $pos) : $trimmed;
+            $safeStmt = preg_replace('/^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?/i', 'CREATE TABLE IF NOT EXISTS ', $stmtBody);
             $tableStatements[] = [
                 'name' => $tableName,
                 'sql' => $safeStmt,
@@ -514,7 +517,7 @@ if ($action === 'sync_schema') {
     }
 
     $offset = (int) ($_GET['offset'] ?? 0);
-    $limit = (int) ($_GET['limit'] ?? 100);
+    $limit = (int) ($_GET['limit'] ?? 250);
     $slice = array_slice($tableStatements, $offset, $limit);
 
     $created = [];
