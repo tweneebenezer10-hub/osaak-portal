@@ -230,6 +230,48 @@ if ($action === 'recover_otp') {
     exit;
 }
 
+if ($action === 'profile_render') {
+    $t0 = microtime(true);
+    $steps = [];
+    $mark = static function (string $name) use (&$steps, &$t0): void {
+        $now = microtime(true);
+        $steps[] = ['step' => $name, 'ms' => round(($now - $t0) * 1000, 1)];
+        $t0 = $now;
+    };
+    try {
+        $_SESSION['user_id'] = (int) ($_GET['user_id'] ?? 26);
+        $_SESSION['active_school_id'] = (int) ($_GET['school_id'] ?? 1);
+        $u = current_user();
+        $mark('current_user');
+        $sc = active_school_context();
+        $mark('active_school_context');
+        $role = school_user_role_for_school((int) $u['id'], 1);
+        $mark('school_user_role_for_school');
+        $yr = school_active_academic_year(1);
+        $mark('school_active_academic_year');
+        $terms = school_academic_terms_for_school(1);
+        $mark('school_academic_terms_for_school');
+        $unread = school_notification_unread_count(1, (int) $u['id']);
+        $mark('school_notification_unread_count');
+        $cols = $pdo->query("SHOW COLUMNS FROM school_terms")->fetchAll(PDO::FETCH_COLUMN);
+        $mark('show_columns_school_terms');
+        echo json_encode([
+            'status' => 'ok',
+            'steps' => $steps,
+            'school_terms_cols' => $cols,
+            'role' => $role,
+        ], JSON_PRETTY_PRINT);
+    } catch (Throwable $e) {
+        echo json_encode([
+            'status' => 'exception',
+            'steps' => $steps,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile() . ':' . $e->getLine(),
+        ], JSON_PRETTY_PRINT);
+    }
+    exit;
+}
+
 if ($action === 'get_latest_otp') {
     $userId = (int) ($_GET['user_id'] ?? 9);
     $stmt = $pdo->prepare('SELECT user_id, code_hash, expires_at, sent_at, attempts FROM login_otp_tokens WHERE user_id = ?');

@@ -337,6 +337,13 @@ function current_user(): ?array
     if (empty($_SESSION['user_id'])) {
         return null;
     }
+    static $cachedUser = null;
+    static $cachedUserId = null;
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    $sessionUserId = (int) $_SESSION['user_id'];
+    if ($isReadOnly && $cachedUser !== null && $cachedUserId === $sessionUserId) {
+        return $cachedUser;
+    }
     $user = null;
     try {
         $stmt = db()->prepare(
@@ -387,6 +394,10 @@ function current_user(): ?array
         $_SESSION['active_role'] = $activeRole;
     }
     $user['active_role'] = $activeRole;
+    if ($isReadOnly) {
+        $cachedUser = $user;
+        $cachedUserId = $sessionUserId;
+    }
     return $user;
 }
 
