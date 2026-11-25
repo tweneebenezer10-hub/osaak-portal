@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/app/bootstrap.php';
 require_once APP_ROOT . '/app/school_attendance.php';
 require_once APP_ROOT . '/app/school_staff_attendance.php';
+require_once APP_ROOT . '/app/staff_device_panel.php';
 
 $user = require_school_context();
 $school = active_school_context();
@@ -560,127 +561,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             audit($userId, 'school_staff_attendance_timezone_changed', 'school_id=' . $schoolId . ';timezone=' . $timezoneName);
             $pdo->commit();
             flash('success', 'School attendance timezone saved. Attendance timestamps and schedule classifications use this timezone.');
-        } elseif ($action === 'register_kiosk_device') {
-            $deviceName = trim((string) ($_POST['device_name'] ?? ''));
-            if (!$kioskConfigured) {
-                throw new RuntimeException('Save a schedule for every active staff category before registering an attendance kiosk.');
-            }
-            if ($deviceName === '' || mb_strlen($deviceName) > 100) {
-                throw new RuntimeException('Enter a device name of up to 100 characters.');
-            }
-            $deviceToken = bin2hex(random_bytes(32));
-            $deviceRegisteredAt = (new DateTimeImmutable('now', $attendanceTimezone))->format('Y-m-d H:i:s');
-            $pdo->beginTransaction();
-            $pdo->prepare(
-                'INSERT INTO school_staff_attendance_kiosk_devices
-                    (school_id, device_name, token_hash, registered_by, created_at)
-                 VALUES (?, ?, ?, ?, ?)'
-            )->execute([$schoolId, $deviceName, keyed_hash($deviceToken), $userId, $deviceRegisteredAt]);
-            $deviceId = (int) $pdo->lastInsertId();
-            $cookieOptions = [
-                'expires' => time() + 31536000,
-                'path' => '/',
-                'secure' => (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                    || strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0])) === 'https',
-                'httponly' => true,
-                'samesite' => 'Strict',
-            ];
-            if (!setcookie('staff_attendance_kiosk_device_' . $schoolId, $deviceToken, $cookieOptions)) {
-                throw new RuntimeException('The device token could not be installed in this browser. No device was registered.');
-            }
-            school_staff_attendance_security_event(
+        } elseif (in_array($action, ['register_kiosk_device', 'rename_kiosk_device', 'activate_kiosk_device', 'deactivate_kiosk_device', 'revoke_kiosk_device', 'replace_kiosk_device'], true)) {
+            handle_attendance_device_post(
                 $pdo,
                 $schoolId,
-                'device_registered',
-                $deviceId,
-                null,
                 $userId,
-                null,
-                $deviceName,
-                $deviceRegisteredAt
+                $user,
+                $attendanceTimezone,
+                $kioskConfigured,
+                'staff_attendance.php#kiosk-setup'
             );
-            audit($userId, 'school_staff_attendance_kiosk_device_registered', 'school_id=' . $schoolId . ';device_id=' . $deviceId);
-            $pdo->commit();
-            flash('success', 'This device is now authorised for staff attendance. Keep its browser profile under school control.');
-            $returnToKiosk = true;
-        } elseif ($action === 'rename_kiosk_device') {
-            $deviceId = filter_var($_POST['device_id'] ?? null, FILTER_VALIDATE_INT);
-            $deviceName = trim((string) ($_POST['device_name'] ?? ''));
-            if ($deviceId === false || $deviceId < 1 || $deviceName === '' || mb_strlen($deviceName) > 100) {
-                throw new RuntimeException('Enter a device name of up to 100 characters.');
-            }
-            $renamedAt = (new DateTimeImmutable('now', $attendanceTimezone))->format('Y-m-d H:i:s');
-            $pdo->beginTransaction();
-            $deviceToRename = $pdo->prepare(
-                'SELECT device_name FROM school_staff_attendance_kiosk_devices
-                 WHERE id = ? AND school_id = ? AND deactivated_at IS NULL FOR UPDATE'
-            );
-            $deviceToRename->execute([(int) $deviceId, $schoolId]);
-            $currentDeviceName = $deviceToRename->fetchColumn();
-            if ($currentDeviceName === false) {
-                throw new RuntimeException('The kiosk device is not active or does not belong to this school.');
-            }
-            if ((string) $currentDeviceName !== $deviceName) {
-                $pdo->prepare(
-                    'UPDATE school_staff_attendance_kiosk_devices
-                     SET device_name = ? WHERE id = ? AND school_id = ? AND deactivated_at IS NULL'
-                )->execute([$deviceName, (int) $deviceId, $schoolId]);
-                school_staff_attendance_security_event(
-                    $pdo,
-                    $schoolId,
-                    'device_renamed',
-                    (int) $deviceId,
-                    null,
-                    $userId,
-                    null,
-                    $deviceName,
-                    $renamedAt
-                );
-                audit($userId, 'school_staff_attendance_kiosk_device_renamed', 'school_id=' . $schoolId . ';device_id=' . (int) $deviceId);
-            }
-            $pdo->commit();
-            flash('success', 'The attendance device name was saved.');
-        } elseif ($action === 'deactivate_kiosk_device') {
-            $deviceId = filter_var($_POST['device_id'] ?? null, FILTER_VALIDATE_INT);
-            if ($deviceId === false || $deviceId < 1) {
-                throw new RuntimeException('Select a valid registered kiosk device.');
-            }
-            $currentDeviceForRequest = school_staff_attendance_kiosk_device($pdo, $schoolId);
-            $deviceDeactivatedAt = (new DateTimeImmutable('now', $attendanceTimezone))->format('Y-m-d H:i:s');
-            $pdo->beginTransaction();
-            $deactivate = $pdo->prepare(
-                'UPDATE school_staff_attendance_kiosk_devices
-                 SET deactivated_by = ?, deactivated_at = ?
-                 WHERE id = ? AND school_id = ? AND deactivated_at IS NULL'
-            );
-            $deactivate->execute([$userId, $deviceDeactivatedAt, (int) $deviceId, $schoolId]);
-            if ($deactivate->rowCount() !== 1) {
-                throw new RuntimeException('The kiosk device was already deactivated or does not belong to this school.');
-            }
-            school_staff_attendance_security_event(
-                $pdo,
-                $schoolId,
-                'device_deactivated',
-                (int) $deviceId,
-                null,
-                $userId,
-                null,
-                'Deactivated by administrator',
-                $deviceDeactivatedAt
-            );
-            audit($userId, 'school_staff_attendance_kiosk_device_deactivated', 'school_id=' . $schoolId . ';device_id=' . (int) $deviceId);
-            $pdo->commit();
-            if ($currentDeviceForRequest !== null && (int) $currentDeviceForRequest['id'] === (int) $deviceId) {
-                setcookie('staff_attendance_kiosk_device_' . $schoolId, '', [
-                    'expires' => time() - 3600,
-                    'path' => '/',
-                    'secure' => (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                        || strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0])) === 'https',
-                    'httponly' => true,
-                    'samesite' => 'Strict',
-                ]);
-            }
-            flash('success', 'The kiosk device access has been revoked.');
         } elseif ($action === 'reopen_kiosk_window') {
             throw new RuntimeException('Kiosk check-ins are limited to 5:30 AM until before 2:00 PM. Window reopenings are no longer available.');
         } elseif (in_array($action, ['manual_record', 'correct_record'], true)) {
@@ -1371,43 +1261,7 @@ render_header('Staff attendance management');
         </label>
         <button class="button" type="submit">Save school timezone</button>
     </form>
-    <?php if ($kioskConfigured): ?>
-        <form method="post" class="form-stack">
-            <?= csrf_field() ?><input type="hidden" name="action" value="register_kiosk_device"><input type="hidden" name="return_view" value="kiosk-setup">
-            <label for="kiosk-device-name">Device name<input id="kiosk-device-name" name="device_name" maxlength="100" required placeholder="Main office tablet"></label>
-            <button class="button button-primary" type="submit"><?= $activeKioskDeviceCount > 0 ? 'Authorise another device' : 'Authorise first device' ?></button>
-        </form>
-        <p class="muted">To re-authorise a revoked device, register it again from this device. A new random credential will be issued.</p>
-    <?php else: ?><p class="muted">Device authorisation becomes available after every active staff category has a saved schedule.</p><?php endif; ?>
-    <?php if ($kioskDevices !== []): ?>
-        <h3>Authorised attendance devices</h3>
-        <div class="table-scroll"><table><thead><tr><th>Device</th><th>Registered</th><th>Last used</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-        <?php foreach ($kioskDevices as $device): ?>
-            <tr>
-                <td><?= e((string) $device['device_name']) ?></td>
-                <td><?= e((string) $device['created_at']) ?> · <?= e((string) $device['registered_by_name']) ?></td>
-                <td><?= e((string) ($device['last_used_at'] ?? 'Never')) ?></td>
-                <td><?= $device['deactivated_at'] === null ? 'Active' : 'Revoked · ' . e((string) $device['deactivated_at']) ?></td>
-                <td>
-                    <?php if ($device['deactivated_at'] === null): ?>
-                        <div class="staff-kiosk-device-actions">
-                            <form method="post" class="staff-kiosk-rename-form">
-                                <?= csrf_field() ?><input type="hidden" name="action" value="rename_kiosk_device"><input type="hidden" name="return_view" value="kiosk-setup"><input type="hidden" name="device_id" value="<?= (int) $device['id'] ?>">
-                                <label class="sr-only" for="kiosk-device-name-<?= (int) $device['id'] ?>">New name for <?= e((string) $device['device_name']) ?></label>
-                                <input id="kiosk-device-name-<?= (int) $device['id'] ?>" type="text" name="device_name" maxlength="100" value="<?= e((string) $device['device_name']) ?>" required>
-                                <button class="button button-small" type="submit">Rename</button>
-                            </form>
-                            <form method="post" onsubmit="return confirm('Revoke attendance access for this device?');">
-                                <?= csrf_field() ?><input type="hidden" name="action" value="deactivate_kiosk_device"><input type="hidden" name="return_view" value="kiosk-setup"><input type="hidden" name="device_id" value="<?= (int) $device['id'] ?>">
-                                <button class="button button-small" type="submit">Revoke access</button>
-                            </form>
-                        </div>
-                    <?php else: ?>—<?php endif; ?>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody></table></div>
-    <?php endif; ?>
+    <?php render_attendance_device_management($pdo, $schoolId, $user, $attendanceTimezone, $kioskConfigured, 'staff_attendance.php', 'kiosk-setup'); ?>
 </section>
 <?php endif; ?>
 <?php if ($readOnly): ?><p class="notice">IT Support preview is read-only. Staff attendance controls are disabled.</p><?php endif; ?>

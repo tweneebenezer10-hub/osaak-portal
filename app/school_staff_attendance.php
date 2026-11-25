@@ -92,6 +92,24 @@ function school_staff_attendance_timezone(PDO $pdo, int $schoolId): DateTimeZone
 
 function school_staff_attendance_kiosk_device(PDO $pdo, int $schoolId): ?array
 {
+    if ($schoolId < 1) {
+        return null;
+    }
+    $agentVerifiedId = (int) ($_SESSION['kiosk_agent_verified'][$schoolId]['device_id'] ?? 0);
+    $agentVerifiedAt = (int) ($_SESSION['kiosk_agent_verified'][$schoolId]['verified_at'] ?? 0);
+    if ($agentVerifiedId > 0 && $agentVerifiedAt >= time() - 3600) {
+        $agentStmt = $pdo->prepare(
+            'SELECT id, device_name FROM school_staff_attendance_kiosk_devices
+             WHERE id = ? AND school_id = ? AND deactivated_at IS NULL LIMIT 1'
+        );
+        $agentStmt->execute([$agentVerifiedId, $schoolId]);
+        $agentDevice = $agentStmt->fetch();
+        if ($agentDevice) {
+            return $agentDevice;
+        }
+        unset($_SESSION['kiosk_agent_verified'][$schoolId]);
+    }
+
     $cookieName = 'staff_attendance_kiosk_device_' . $schoolId;
     $token = (string) ($_COOKIE[$cookieName] ?? '');
     if (preg_match('/^[a-f0-9]{64}$/D', $token) !== 1) {
@@ -108,6 +126,33 @@ function school_staff_attendance_kiosk_device(PDO $pdo, int $schoolId): ?array
 
 function school_staff_attendance_authorized_kiosk_devices(PDO $pdo): array
 {
+    $authorized = [];
+    if (!empty($_SESSION['kiosk_agent_verified']) && is_array($_SESSION['kiosk_agent_verified'])) {
+        $agentLookup = $pdo->prepare(
+            'SELECT device.id, device.school_id, device.device_name,
+                    school.name AS school_name, school.short_name
+             FROM school_staff_attendance_kiosk_devices device
+             JOIN schools school ON school.id = device.school_id
+               AND school.status = "active" AND school.deleted_at IS NULL
+             WHERE device.id = ? AND device.school_id = ?
+               AND device.deactivated_at IS NULL
+             LIMIT 1'
+        );
+        foreach ($_SESSION['kiosk_agent_verified'] as $sid => $entry) {
+            $sidInt = (int) $sid;
+            $devId = (int) ($entry['device_id'] ?? 0);
+            $verifiedAt = (int) ($entry['verified_at'] ?? 0);
+            if ($sidInt < 1 || $devId < 1 || $verifiedAt < time() - 3600) {
+                continue;
+            }
+            $agentLookup->execute([$devId, $sidInt]);
+            $dev = $agentLookup->fetch();
+            if ($dev) {
+                $authorized[(int) $dev['school_id']] = $dev;
+            }
+        }
+    }
+
     $stmt = $pdo->prepare(
         'SELECT device.id, device.school_id, device.device_name,
                 school.name AS school_name, school.short_name
@@ -118,7 +163,6 @@ function school_staff_attendance_authorized_kiosk_devices(PDO $pdo): array
            AND device.deactivated_at IS NULL
          LIMIT 1'
     );
-    $authorized = [];
     foreach ($_COOKIE as $cookieName => $token) {
         if (!is_string($cookieName)
             || !is_string($token)
@@ -127,7 +171,7 @@ function school_staff_attendance_authorized_kiosk_devices(PDO $pdo): array
             continue;
         }
         $schoolId = filter_var($matches[1], FILTER_VALIDATE_INT);
-        if ($schoolId === false || $schoolId < 1) {
+        if ($schoolId === false || $schoolId < 1 || isset($authorized[$schoolId])) {
             continue;
         }
         $stmt->execute([$schoolId, keyed_hash($token)]);
@@ -557,5 +601,429 @@ function school_staff_attendance_refresh_makeup_obligation(
     ]);
 
     return $summary;
+}
+
+function school_staff_attendance_device_extended_columns_ready(PDO $pdo): bool
+{
+    static $ready = null;
+    if ($ready !== null) {
+        return $ready;
+    }
+    try {
+        $cols = $pdo->query('SHOW COLUMNS FROM school_staff_attendance_kiosk_devices')->fetchAll(PDO::FETCH_COLUMN);
+        $ready = is_array($cols) && in_array('device_location', $cols, true) && in_array('status', $cols, true);
+    } catch (Throwable) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+function school_staff_attendance_can_manage_devices(array $user, int $schoolId): bool
+{
+    $userId = (int) ($user['id'] ?? 0);
+    if ($userId < 1 || $schoolId < 1 || platform_super_admin_user($user)) {
+        return false;
+    }
+    if (function_exists('active_it_support_context') && active_it_support_context($user) !== null) {
+        return false;
+    }
+    $role = school_user_role_for_school($userId, $schoolId);
+    return in_array($role, ['school_headmaster', 'school_proprietor'], true);
+}
+
+function school_staff_attendance_set_kiosk_cookie(int $schoolId, ?string $deviceToken): bool
+{
+    $secure = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0])) === 'https';
+    return setcookie('staff_attendance_kiosk_device_' . $schoolId, $deviceToken ?? '', [
+        'expires' => $deviceToken === null ? time() - 3600 : time() + 31536000,
+        'path' => '/',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ]);
+}
+
+function school_staff_attendance_register_device(
+    PDO $pdo,
+    int $schoolId,
+    int $actorUserId,
+    string $deviceName,
+    string $deviceLocation,
+    DateTimeZone $timezone,
+    bool $issueBrowserCookie = true
+): array {
+    $deviceName = trim($deviceName);
+    $deviceLocation = trim($deviceLocation);
+    if ($deviceName === '' || mb_strlen($deviceName) > 100) {
+        throw new RuntimeException('Enter a device name of up to 100 characters.');
+    }
+    if ($deviceLocation === '' || mb_strlen($deviceLocation) > 120) {
+        throw new RuntimeException('Enter a device location of up to 120 characters.');
+    }
+
+    $deviceToken = bin2hex(random_bytes(32));
+    $enrollmentCode = 'CNZ-' . strtoupper(bin2hex(random_bytes(2))) . '-' . strtoupper(bin2hex(random_bytes(2)));
+    $registeredAt = (new DateTimeImmutable('now', $timezone))->format('Y-m-d H:i:s');
+    $expiresAt = (new DateTimeImmutable('+15 minutes', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
+
+    $pdo->beginTransaction();
+    try {
+        if (school_staff_attendance_device_extended_columns_ready($pdo)) {
+            $pdo->prepare(
+                'INSERT INTO school_staff_attendance_kiosk_devices
+                    (school_id, device_name, device_location, token_hash, status, auth_mode,
+                     enrollment_code_hash, enrollment_expires_at, registered_by, created_at)
+                 VALUES (?, ?, ?, ?, "active", "browser_credential", ?, ?, ?, ?)'
+            )->execute([
+                $schoolId,
+                $deviceName,
+                $deviceLocation,
+                keyed_hash($deviceToken),
+                keyed_hash($enrollmentCode),
+                $expiresAt,
+                $actorUserId,
+                $registeredAt,
+            ]);
+        } else {
+            $pdo->prepare(
+                'INSERT INTO school_staff_attendance_kiosk_devices
+                    (school_id, device_name, token_hash, registered_by, created_at)
+                 VALUES (?, ?, ?, ?, ?)'
+            )->execute([$schoolId, $deviceName, keyed_hash($deviceToken), $actorUserId, $registeredAt]);
+        }
+        $deviceId = (int) $pdo->lastInsertId();
+        if ($issueBrowserCookie && !headers_sent()) {
+            school_staff_attendance_set_kiosk_cookie($schoolId, $deviceToken);
+        }
+        school_staff_attendance_security_event(
+            $pdo,
+            $schoolId,
+            'device_registered',
+            $deviceId,
+            null,
+            $actorUserId,
+            null,
+            $deviceName . ' (' . $deviceLocation . ')',
+            $registeredAt
+        );
+        audit($actorUserId, 'school_staff_attendance_kiosk_device_registered', 'school_id=' . $schoolId . ';device_id=' . $deviceId);
+        $pdo->commit();
+        return [
+            'device_id' => $deviceId,
+            'device_token' => $deviceToken,
+            'enrollment_code' => $enrollmentCode,
+            'enrollment_expires_at' => $expiresAt,
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function school_staff_attendance_set_device_status(
+    PDO $pdo,
+    int $schoolId,
+    int $deviceId,
+    int $actorUserId,
+    string $targetStatus,
+    DateTimeZone $timezone,
+    ?string $reason = null
+): void {
+    if (!in_array($targetStatus, ['active', 'inactive', 'revoked'], true)) {
+        throw new InvalidArgumentException('Invalid device status.');
+    }
+    $nowStr = (new DateTimeImmutable('now', $timezone))->format('Y-m-d H:i:s');
+    $extended = school_staff_attendance_device_extended_columns_ready($pdo);
+    $currentDevice = school_staff_attendance_kiosk_device($pdo, $schoolId);
+
+    $pdo->beginTransaction();
+    try {
+        $selectSql = $extended
+            ? 'SELECT id, device_name, status, deactivated_at, revoked_at FROM school_staff_attendance_kiosk_devices WHERE id = ? AND school_id = ? FOR UPDATE'
+            : 'SELECT id, device_name, deactivated_at FROM school_staff_attendance_kiosk_devices WHERE id = ? AND school_id = ? FOR UPDATE';
+        $stmt = $pdo->prepare($selectSql);
+        $stmt->execute([$deviceId, $schoolId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            throw new RuntimeException('The selected attendance device does not belong to this school.');
+        }
+        if ($extended && (($row['status'] ?? '') === 'revoked' || $row['revoked_at'] !== null)) {
+            throw new RuntimeException('Revoked devices cannot be reactivated. Register or replace the device instead.');
+        }
+
+        if ($extended) {
+            if ($targetStatus === 'active') {
+                $pdo->prepare(
+                    'UPDATE school_staff_attendance_kiosk_devices
+                     SET status = "active", deactivated_by = NULL, deactivated_at = NULL
+                     WHERE id = ? AND school_id = ? AND status <> "revoked"'
+                )->execute([$deviceId, $schoolId]);
+                $eventType = 'device_activated';
+                $eventReason = $reason ?? 'Activated by administrator';
+            } elseif ($targetStatus === 'inactive') {
+                $pdo->prepare(
+                    'UPDATE school_staff_attendance_kiosk_devices
+                     SET status = "inactive", deactivated_by = ?, deactivated_at = ?
+                     WHERE id = ? AND school_id = ? AND status <> "revoked"'
+                )->execute([$actorUserId, $nowStr, $deviceId, $schoolId]);
+                $eventType = 'device_deactivated';
+                $eventReason = $reason ?? 'Temporarily deactivated by administrator';
+            } else {
+                $pdo->prepare(
+                    'UPDATE school_staff_attendance_kiosk_devices
+                     SET status = "revoked", deactivated_by = COALESCE(deactivated_by, ?),
+                         deactivated_at = COALESCE(deactivated_at, ?),
+                         revoked_by = ?, revoked_at = ?
+                     WHERE id = ? AND school_id = ?'
+                )->execute([$actorUserId, $nowStr, $actorUserId, $nowStr, $deviceId, $schoolId]);
+                $eventType = 'device_revoked';
+                $eventReason = $reason ?? 'Permanently revoked by administrator';
+            }
+        } else {
+            if ($targetStatus === 'active') {
+                $pdo->prepare('UPDATE school_staff_attendance_kiosk_devices SET deactivated_by = NULL, deactivated_at = NULL WHERE id = ? AND school_id = ?')
+                    ->execute([$deviceId, $schoolId]);
+                $eventType = 'device_activated';
+                $eventReason = $reason ?? 'Activated by administrator';
+            } else {
+                $pdo->prepare('UPDATE school_staff_attendance_kiosk_devices SET deactivated_by = ?, deactivated_at = ? WHERE id = ? AND school_id = ?')
+                    ->execute([$actorUserId, $nowStr, $deviceId, $schoolId]);
+                $eventType = $targetStatus === 'revoked' ? 'device_revoked' : 'device_deactivated';
+                $eventReason = $reason ?? 'Deactivated by administrator';
+            }
+        }
+
+        school_staff_attendance_security_event(
+            $pdo,
+            $schoolId,
+            $eventType,
+            $deviceId,
+            null,
+            $actorUserId,
+            null,
+            $eventReason,
+            $nowStr
+        );
+        audit($actorUserId, 'school_staff_attendance_kiosk_' . $eventType, 'school_id=' . $schoolId . ';device_id=' . $deviceId);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    if ($targetStatus !== 'active') {
+        if (isset($_SESSION['kiosk_agent_verified'][$schoolId]) && (int) ($_SESSION['kiosk_agent_verified'][$schoolId]['device_id'] ?? 0) === $deviceId) {
+            unset($_SESSION['kiosk_agent_verified'][$schoolId]);
+        }
+        if ($currentDevice !== null && (int) $currentDevice['id'] === $deviceId && !headers_sent()) {
+            school_staff_attendance_set_kiosk_cookie($schoolId, null);
+        }
+    }
+}
+
+function school_staff_attendance_replace_device(
+    PDO $pdo,
+    int $schoolId,
+    int $oldDeviceId,
+    int $actorUserId,
+    string $newName,
+    string $newLocation,
+    DateTimeZone $timezone,
+    bool $issueBrowserCookie = true
+): array {
+    $newDevice = school_staff_attendance_register_device(
+        $pdo,
+        $schoolId,
+        $actorUserId,
+        $newName,
+        $newLocation,
+        $timezone,
+        $issueBrowserCookie
+    );
+    $newDeviceId = (int) $newDevice['device_id'];
+    $nowStr = (new DateTimeImmutable('now', $timezone))->format('Y-m-d H:i:s');
+    $extended = school_staff_attendance_device_extended_columns_ready($pdo);
+
+    $pdo->beginTransaction();
+    try {
+        if ($extended) {
+            $pdo->prepare(
+                'UPDATE school_staff_attendance_kiosk_devices
+                 SET status = "revoked",
+                     deactivated_by = COALESCE(deactivated_by, ?),
+                     deactivated_at = COALESCE(deactivated_at, ?),
+                     revoked_by = COALESCE(revoked_by, ?),
+                     revoked_at = COALESCE(revoked_at, ?),
+                     replaced_by_device_id = ?
+                 WHERE id = ? AND school_id = ?'
+            )->execute([$actorUserId, $nowStr, $actorUserId, $nowStr, $newDeviceId, $oldDeviceId, $schoolId]);
+        } else {
+            $pdo->prepare(
+                'UPDATE school_staff_attendance_kiosk_devices
+                 SET deactivated_by = COALESCE(deactivated_by, ?),
+                     deactivated_at = COALESCE(deactivated_at, ?)
+                 WHERE id = ? AND school_id = ?'
+            )->execute([$actorUserId, $nowStr, $oldDeviceId, $schoolId]);
+        }
+        school_staff_attendance_security_event(
+            $pdo,
+            $schoolId,
+            'device_replaced',
+            $oldDeviceId,
+            null,
+            $actorUserId,
+            null,
+            'Replaced by device #' . $newDeviceId . ' (' . trim($newName) . ')',
+            $nowStr
+        );
+        audit($actorUserId, 'school_staff_attendance_kiosk_device_replaced', 'school_id=' . $schoolId . ';old_device_id=' . $oldDeviceId . ';new_device_id=' . $newDeviceId);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+    return $newDevice;
+}
+
+function school_staff_attendance_enroll_agent(
+    PDO $pdo,
+    int $schoolId,
+    string $enrollmentCode,
+    string $deviceUid,
+    string $agentSecret
+): array {
+    $enrollmentCode = strtoupper(trim($enrollmentCode));
+    $deviceUid = strtolower(trim($deviceUid));
+    if (!preg_match('/^[a-f0-9]{64}$/D', $deviceUid) || strlen($agentSecret) < 32) {
+        throw new InvalidArgumentException('Invalid physical device identifier or agent secret.');
+    }
+    if (!school_staff_attendance_device_extended_columns_ready($pdo)) {
+        throw new RuntimeException('Attendance device agent columns are not migrated yet.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT id, device_name, enrollment_expires_at
+             FROM school_staff_attendance_kiosk_devices
+             WHERE school_id = ? AND enrollment_code_hash = ? AND status = "active" AND deactivated_at IS NULL
+             LIMIT 1 FOR UPDATE'
+        );
+        $stmt->execute([$schoolId, keyed_hash($enrollmentCode)]);
+        $row = $stmt->fetch();
+        if (!$row || empty($row['enrollment_expires_at'])
+            || strtotime((string) $row['enrollment_expires_at'] . ' UTC') < time()) {
+            throw new RuntimeException('The device enrollment code is invalid or expired.');
+        }
+
+        $deviceId = (int) $row['id'];
+        $pdo->prepare(
+            'UPDATE school_staff_attendance_kiosk_devices
+             SET device_uid = ?, agent_secret_hash = ?, auth_mode = "local_agent",
+                 enrollment_code_hash = NULL, enrollment_expires_at = NULL
+             WHERE id = ? AND school_id = ?'
+        )->execute([$deviceUid, hash('sha256', $agentSecret), $deviceId, $schoolId]);
+
+        school_staff_attendance_security_event(
+            $pdo,
+            $schoolId,
+            'device_agent_enrolled',
+            $deviceId,
+            null,
+            null,
+            $deviceUid,
+            'Physical device agent paired (' . (string) $row['device_name'] . ')'
+        );
+        $pdo->commit();
+        return ['device_id' => $deviceId, 'device_name' => (string) $row['device_name']];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function school_staff_attendance_verify_agent_challenge(
+    PDO $pdo,
+    int $schoolId,
+    string $deviceUid,
+    string $nonce,
+    string $signatureHex
+): ?array {
+    $deviceUid = strtolower(trim($deviceUid));
+    $signatureHex = strtolower(trim($signatureHex));
+    if (!preg_match('/^[a-f0-9]{64}$/D', $deviceUid)
+        || !preg_match('/^[a-f0-9]{64}$/D', $signatureHex)
+        || $nonce === ''
+        || !school_staff_attendance_device_extended_columns_ready($pdo)) {
+        return null;
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT id, device_name, agent_secret_hash
+         FROM school_staff_attendance_kiosk_devices
+         WHERE school_id = ? AND device_uid = ? AND status = "active" AND deactivated_at IS NULL
+         LIMIT 1'
+    );
+    $stmt->execute([$schoolId, $deviceUid]);
+    $device = $stmt->fetch();
+    if (!$device || empty($device['agent_secret_hash'])) {
+        return null;
+    }
+
+    // agent_secret_hash stores sha256(agentSecret); the local agent signs using sha256(agentSecret) or agentSecret
+    // Verify HMAC-SHA256(nonce|school_id, agent_secret_hash) so raw agentSecret is never stored in DB.
+    $expected = hash_hmac('sha256', $nonce . '|' . $schoolId, (string) $device['agent_secret_hash']);
+    if (!hash_equals($expected, $signatureHex)) {
+        return null;
+    }
+
+    return ['id' => (int) $device['id'], 'device_name' => (string) $device['device_name']];
+}
+
+function school_staff_attendance_list_devices(PDO $pdo, int $schoolId): array
+{
+    $extended = school_staff_attendance_device_extended_columns_ready($pdo);
+    $extraCols = $extended
+        ? 'device.device_location, device.status, device.auth_mode, device.device_uid, device.revoked_at, device.replaced_by_device_id,'
+        : '"Main Office" AS device_location, IF(device.deactivated_at IS NULL, "active", "revoked") AS status, "browser_credential" AS auth_mode, NULL AS device_uid, device.deactivated_at AS revoked_at, NULL AS replaced_by_device_id,';
+    $stmt = $pdo->prepare(
+        'SELECT device.id, device.device_name, ' . $extraCols . '
+                device.created_at, device.last_used_at, device.deactivated_at,
+                registrar.full_name AS registered_by_name
+         FROM school_staff_attendance_kiosk_devices device
+         JOIN users registrar ON registrar.id = device.registered_by
+         WHERE device.school_id = ?
+         ORDER BY (device.deactivated_at IS NULL) DESC, device.created_at DESC, device.id DESC'
+    );
+    $stmt->execute([$schoolId]);
+    return $stmt->fetchAll();
+}
+
+function school_staff_attendance_device_history(PDO $pdo, int $schoolId, int $limit = 30): array
+{
+    $limit = max(1, min(100, $limit));
+    $stmt = $pdo->prepare(
+        'SELECT event.id, event.event_type, event.reason, event.occurred_at,
+                device.device_name, actor.full_name AS actor_name
+         FROM school_staff_attendance_security_events event
+         LEFT JOIN school_staff_attendance_kiosk_devices device
+           ON device.id = event.device_id AND device.school_id = event.school_id
+         LEFT JOIN users actor ON actor.id = event.actor_user_id
+         WHERE event.school_id = ?
+           AND event.event_type IN ("device_registered", "device_renamed", "device_activated", "device_deactivated", "device_revoked", "device_replaced", "device_agent_enrolled", "unauthorized_device")
+         ORDER BY event.occurred_at DESC, event.id DESC
+         LIMIT ' . $limit
+    );
+    $stmt->execute([$schoolId]);
+    return $stmt->fetchAll();
 }
 

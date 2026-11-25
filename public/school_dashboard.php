@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/app/bootstrap.php';
 require_once APP_ROOT . '/app/school_attendance.php';
 require_once APP_ROOT . '/app/school_staff_attendance.php';
+require_once APP_ROOT . '/app/staff_device_panel.php';
 
 $user = require_school_context();
 $school = active_school_context();
@@ -12,6 +13,28 @@ if (!$school) {
 }
 
 $schoolId = (int) $school['id'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    require_csrf();
+    $dashPdo = db();
+    $dashTz = school_staff_attendance_timezone($dashPdo, $schoolId);
+    $cfgStmt = $dashPdo->prepare('SELECT setting_value FROM school_settings WHERE school_id = ? AND setting_key = "staff_attendance_kiosk_configured" LIMIT 1');
+    $cfgStmt->execute([$schoolId]);
+    $dashKioskConfigured = $cfgStmt->fetchColumn() === '1';
+    try {
+        handle_attendance_device_post(
+            $dashPdo,
+            $schoolId,
+            (int) $user['id'],
+            $user,
+            $dashTz,
+            $dashKioskConfigured,
+            'school_dashboard.php#attendance-device-management'
+        );
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        redirect('school_dashboard.php#attendance-device-management');
+    }
+}
 $schoolClassLevels = school_class_levels($schoolId, true);
 $schoolRole = (string) ($user['active_school_role'] ?? school_user_role_for_school((int) $user['id'], $schoolId));
 $hasOwnStaffWorkspace = false;
@@ -915,6 +938,16 @@ $ownAttendanceTime = static function (?string $value) use ($ownStaffAttendance):
         </div>
     </section>
     <?php endif; ?>
+    <?php endif; ?>
+    <?php if (in_array($schoolRole, ['school_proprietor', 'school_headmaster'], true) && active_it_support_context($user) === null): ?>
+        <?php
+        $dashDevPdo = db();
+        $dashDevTz = school_staff_attendance_timezone($dashDevPdo, $schoolId);
+        $dashDevCfgStmt = $dashDevPdo->prepare('SELECT setting_value FROM school_settings WHERE school_id = ? AND setting_key = "staff_attendance_kiosk_configured" LIMIT 1');
+        $dashDevCfgStmt->execute([$schoolId]);
+        $dashDevKioskConfigured = $dashDevCfgStmt->fetchColumn() === '1';
+        render_attendance_device_management($dashDevPdo, $schoolId, $user, $dashDevTz, $dashDevKioskConfigured, 'school_dashboard.php');
+        ?>
     <?php endif; ?>
     <?php if ($schoolRole === 'school_proprietor'): ?></div><?php endif; ?>
 <?php render_footer(); ?>

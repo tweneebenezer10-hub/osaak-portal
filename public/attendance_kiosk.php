@@ -545,19 +545,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $school !== null
                                     ? min(65535, (int) floor(($now->getTimestamp() - $arrival->getTimestamp()) / 60))
                                     : null;
                                 $earlyDeparture = $schedule['clock_out_enabled'] && $now < $earlyThreshold;
-                                $clockOutUpdate = $pdo->prepare(
-                                    'UPDATE school_staff_attendance
-                                     SET departure_at = ?, working_minutes = ?, early_departure = ?,
-                                         departure_verification_method = "kiosk_verified"
-                                     WHERE id = ? AND school_id = ? AND departure_at IS NULL'
-                                );
-                                $clockOutUpdate->execute([
-                                    $nowString,
-                                    $workingMinutes,
-                                    $earlyDeparture ? 1 : 0,
-                                    (int) $existing['id'],
-                                    (int) $school['id'],
-                                ]);
+                                $hasDeviceCols = school_staff_attendance_device_extended_columns_ready($pdo);
+                                if ($hasDeviceCols) {
+                                    try {
+                                        $staffAttCols = $pdo->query('SHOW COLUMNS FROM school_staff_attendance LIKE "checkout_device_id"')->fetch();
+                                        $hasCheckoutDeviceCol = $staffAttCols !== false;
+                                    } catch (Throwable) {
+                                        $hasCheckoutDeviceCol = false;
+                                    }
+                                } else {
+                                    $hasCheckoutDeviceCol = false;
+                                }
+                                if ($hasCheckoutDeviceCol) {
+                                    $clockOutUpdate = $pdo->prepare(
+                                        'UPDATE school_staff_attendance
+                                         SET departure_at = ?, working_minutes = ?, early_departure = ?,
+                                             departure_verification_method = "kiosk_verified", checkout_device_id = ?
+                                         WHERE id = ? AND school_id = ? AND departure_at IS NULL'
+                                    );
+                                    $clockOutUpdate->execute([
+                                        $nowString,
+                                        $workingMinutes,
+                                        $earlyDeparture ? 1 : 0,
+                                        (int) $device['id'],
+                                        (int) $existing['id'],
+                                        (int) $school['id'],
+                                    ]);
+                                } else {
+                                    $clockOutUpdate = $pdo->prepare(
+                                        'UPDATE school_staff_attendance
+                                         SET departure_at = ?, working_minutes = ?, early_departure = ?,
+                                             departure_verification_method = "kiosk_verified"
+                                         WHERE id = ? AND school_id = ? AND departure_at IS NULL'
+                                    );
+                                    $clockOutUpdate->execute([
+                                        $nowString,
+                                        $workingMinutes,
+                                        $earlyDeparture ? 1 : 0,
+                                        (int) $existing['id'],
+                                        (int) $school['id'],
+                                    ]);
+                                }
                                 if ($clockOutUpdate->rowCount() !== 1) {
                                     throw new RuntimeException('The clock-out could not be recorded. Please contact the school office.');
                                 }
@@ -600,24 +628,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $school !== null
                             }
                         } else {
                             $punctuality = school_staff_attendance_classify_arrival($now, $today, $schedule);
-                            $insert = $pdo->prepare(
-                                'INSERT INTO school_staff_attendance
-                                    (school_id, staff_id, attendance_date, arrival_at, expected_reporting_time,
-                                     status, punctuality_status, minutes_late, verification_method, remarks,
-                                     recorded_by, recorded_at)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, "kiosk_verified", NULL, NULL, ?)'
-                            );
-                            $insert->execute([
-                                (int) $school['id'],
-                                (int) $staff['id'],
-                                $today,
-                                $nowString,
-                                $schedule['reporting_time'],
-                                $punctuality['legacy_status'],
-                                $punctuality['status'],
-                                $punctuality['minutes_late'],
-                                $nowString,
-                            ]);
+                            try {
+                                $hasDeviceIdCol = $pdo->query('SHOW COLUMNS FROM school_staff_attendance LIKE "device_id"')->fetch() !== false;
+                            } catch (Throwable) {
+                                $hasDeviceIdCol = false;
+                            }
+                            if ($hasDeviceIdCol) {
+                                $insert = $pdo->prepare(
+                                    'INSERT INTO school_staff_attendance
+                                        (school_id, staff_id, attendance_date, arrival_at, expected_reporting_time,
+                                         status, punctuality_status, minutes_late, verification_method, device_id, remarks,
+                                         recorded_by, recorded_at)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, "kiosk_verified", ?, NULL, NULL, ?)'
+                                );
+                                $insert->execute([
+                                    (int) $school['id'],
+                                    (int) $staff['id'],
+                                    $today,
+                                    $nowString,
+                                    $schedule['reporting_time'],
+                                    $punctuality['legacy_status'],
+                                    $punctuality['status'],
+                                    $punctuality['minutes_late'],
+                                    (int) $device['id'],
+                                    $nowString,
+                                ]);
+                            } else {
+                                $insert = $pdo->prepare(
+                                    'INSERT INTO school_staff_attendance
+                                        (school_id, staff_id, attendance_date, arrival_at, expected_reporting_time,
+                                         status, punctuality_status, minutes_late, verification_method, remarks,
+                                         recorded_by, recorded_at)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, "kiosk_verified", NULL, NULL, ?)'
+                                );
+                                $insert->execute([
+                                    (int) $school['id'],
+                                    (int) $staff['id'],
+                                    $today,
+                                    $nowString,
+                                    $schedule['reporting_time'],
+                                    $punctuality['legacy_status'],
+                                    $punctuality['status'],
+                                    $punctuality['minutes_late'],
+                                    $nowString,
+                                ]);
+                            }
                             $attendanceId = (int) $pdo->lastInsertId();
                             $record = [
                                 'attendance_date' => $today,
@@ -727,20 +782,22 @@ header('Cache-Control: no-store, private, max-age=0');
 header('Pragma: no-cache');
 render_header('Staff attendance kiosk', false);
 ?>
-<section class="attendance-kiosk">
+<section class="attendance-kiosk" data-kiosk-school-id="<?= $school !== null ? (int) $school['id'] : '' ?>" data-kiosk-authorized="<?= $deviceAuthorized ? '1' : '0' ?>">
     <div class="attendance-kiosk-brand">
         <p class="eyebrow">STAFF ATTENDANCE KIOSK</p>
         <?php if ($deviceAuthorized): ?>
             <h1><?= e((string) $school['name']) ?></h1>
-            <p>Enter your Staff ID and attendance PIN. The kiosk records the current school time.</p>
+            <p>Enter your Staff ID and attendance PIN. The kiosk records the current school time. Device: <strong><?= e((string) $device['device_name']) ?></strong></p>
         <?php elseif ($deviceSelectionRequired): ?>
             <h1>Choose a school</h1>
             <p>This device is authorised for more than one school attendance kiosk.</p>
         <?php else: ?>
             <h1>Staff attendance</h1>
             <p>Access is limited to school-authorised attendance devices.</p>
+            <p class="muted" data-agent-status></p>
         <?php endif; ?>
     </div>
+    <script src="assets/js/kiosk_agent.js?v=1" defer></script>
     <?php if ($unauthorizedKiosk): ?>
         <p class="notice notice-error" role="alert">This device is not authorised for staff attendance. Please contact your school administrator.</p>
     <?php elseif ($deviceSelectionRequired): ?>
