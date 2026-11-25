@@ -1,6 +1,29 @@
 # CONNEZER EDUTECH SYSTEMS — Project Progress
 
-Last updated: 2026-11-18
+Last updated: 2026-11-25
+
+## Multi-PC Staff Attendance Device Management, Academic Word Report & Super Admin Documentation
+
+- **Live Production URL:** `https://connezer-edutech-system.vercel.app/`
+- **Features Implemented:**
+  - Independent per-school multi-PC attendance device registry (`app/school_staff_attendance.php`, `app/staff_device_panel.php`), with zero global one-PC limit.
+  - Headmaster & Proprietor **Attendance Device Management** UI added to both `public/school_dashboard.php` and `public/staff_attendance.php`: Register New Attendance Device (Name + Location), Registered Devices (Name, Location, Registration Date, Last Seen, Status), Activate/Deactivate, Revoke Device, Replace Device, and Device Registration History.
+  - Cross-browser physical computer identification via the **Connezer Local Device Agent** (`tools/device-agent/connezer_device_agent.py` on `127.0.0.1:47832`, `public/attendance_device_api.php`, `public/assets/js/kiosk_agent.js`) using HMAC-SHA256 challenge-response across Chrome, Edge, and Firefox, alongside `HttpOnly; SameSite=Strict` credentials.
+  - **Project Documentation & Security Information** section added to `public/platform_admin.php` (Project Info, all 10 User Roles & actual permissions, Security Info including Argon2id + salt + HMAC pepper without exposing secrets, external References, and clickable website link).
+  - Persistent TiDB media storage (`app_media_files` in `app/image_uploads.php`) so existing and newly uploaded profile pictures, school logos, and student photos persist on Vercel.
+- **Database Changes:**
+  - Added `database/migrations/110_multi_pc_attendance_devices.sql` and synced to TiDB Cloud (`fix_all_schema`: 45 statements, 0 errors): `device_location`, `status` (`active`/`inactive`/`revoked`), `device_uid`, `agent_secret_hash`, `auth_mode`, `enrollment_code_hash`, `enrollment_expires_at`, `revoked_by`, `revoked_at`, `replaced_by_device_id`, `UNIQUE KEY uk_staff_attendance_kiosk_school_uid (school_id, device_uid)` on `school_staff_attendance_kiosk_devices`; plus `device_id` and `checkout_device_id` on `school_staff_attendance`.
+- **Security Decisions:**
+  - Strictly scoped device management to `school_headmaster` and `school_proprietor` (excluding teachers, accountants, secretaries, read-only IT Support, and Super Admin).
+  - Rejected browser fingerprints/IPs as standalone physical PC identifiers; implemented OS-stored machine secret + HMAC-SHA256 challenge-response via `127.0.0.1:47832` (documented in `docs/ATTENDANCE_DEVICE_AGENT.md`).
+  - Never exposed `AUTH_PEPPER`, salts, passwords, or private keys in code, UI, or Word documentation.
+- **Tests Performed & Results:**
+  - `tools/device-agent/connezer_device_agent.py`: `/status`, `/enroll`, and `/sign` HMAC-SHA256 verified locally (`Passed`).
+  - Live Vercel + TiDB tests on `https://connezer-edutech-system.vercel.app/`: login, 2FA, `platform_admin.php` (`#project-documentation`), `school_dashboard.php`, `attendance_kiosk.php?school=BFA` unauthorised-device blocking, `school_logo.php`, `profile_picture.php`, and `fix_all_schema` (`0 errors`) all passed.
+  - Multi-PC integration suite authored in `tests/multi_pc_attendance_devices.integration.php` covering all 10 scenarios (local PHP CLI was unavailable on this Windows workstation).
+- **Word Report Location:** `school-dev/docs/CONNEZER_Academic_Project_Report.docx` (OOXML-validated, 315,660 bytes, with embedded live screenshots and clickable `https://connezer-edutech-system.vercel.app/` link).
+- **Outstanding Issues:** Local PHP CLI (`php.exe`) is not installed on this workstation, so `tests/multi_pc_attendance_devices.integration.php` should be run once on a PHP CLI host (XAMPP/Linux) if local CLI regression runs are needed; Vercel serverless uploads remain subject to Vercel's ~4.5 MB request body limit.
+- **Attendance-PC Installation Instructions:** See `docs/ATTENDANCE_DEVICE_AGENT.md` (install Python 3.9+, run `tools/device-agent/connezer_device_agent.py` on `127.0.0.1:47832`, restrict `%ProgramData%\ConnezerAttendanceAgent`, register device in Headmaster/Proprietor dashboard, and click **Pair Local Device Agent** with the one-time `CNZ-XXXX-XXXX` enrollment code).
 
 ## Production Deployment Verification & Authentication Resolution (Vercel + TiDB Cloud)
 
