@@ -1,7 +1,7 @@
 # PRODUCTION DEPLOYMENT DIAGNOSTICS & REPAIR REPORT
 
 **Project:** CONNEZER EDUTECH SYSTEMS — SMART SCHOOL MANAGEMENT SYSTEM  
-**Live Production URL:** https://osaak-portal.vercel.app  
+**Live Production URL:** https://connezer-edutech-system.vercel.app  
 **Date:** 2026-11-18  
 **Environment:** Vercel Serverless (PHP 8.3 / vercel-php@0.7.4) + TiDB Cloud (AWS ap-northeast-1)  
 
