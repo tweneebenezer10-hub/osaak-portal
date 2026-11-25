@@ -522,16 +522,34 @@ if ($action === 'sync_schema') {
 
     $created = [];
     $errors = [];
+    $addedColumns = [];
 
     foreach ($slice as $item) {
         $tableName = $item['name'];
+        $tableOk = false;
         try {
             $pdo->exec($item['sql']);
             $created[] = $tableName;
+            $tableOk = true;
         } catch (PDOException $e) {
             $code = (int) ($e->errorInfo[1] ?? 0);
             if ($code === 1050) {
                 $created[] = $tableName . ' (already exists)';
+                $tableOk = true;
+            } elseif (in_array($code, [1215, 1822, 3734], true)) {
+                // Retry creating table without inline FOREIGN KEY constraints
+                $noFkSql = preg_replace('/,\s*\r?\n\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN KEY[^\r\n]*/i', '', $item['sql']);
+                try {
+                    $pdo->exec((string) $noFkSql);
+                    $created[] = $tableName . ' (created without FK)';
+                    $tableOk = true;
+                } catch (PDOException $e2) {
+                    $errors[] = [
+                        'table' => $tableName,
+                        'code' => (int) ($e2->errorInfo[1] ?? 0),
+                        'message' => $e2->getMessage(),
+                    ];
+                }
             } else {
                 $errors[] = [
                     'table' => $tableName,
@@ -540,7 +558,46 @@ if ($action === 'sync_schema') {
                 ];
             }
         }
+
+        // Sync missing columns on existing/created table
+        if ($tableOk && preg_match('/\(([\s\S]+)\)\s*ENGINE=/i', $item['sql'], $bodyMatch)) {
+            try {
+                $existingCols = $pdo->query("SHOW COLUMNS FROM `{$tableName}`")->fetchAll(PDO::FETCH_COLUMN);
+                $existingMap = array_flip(array_map('strtolower', $existingCols));
+                foreach (preg_split('/\r?\n/', $bodyMatch[1]) as $colLine) {
+                    $colTrim = rtrim(trim($colLine), ',');
+                    if (preg_match('/^`([a-zA-Z0-9_]+)`\s+(.+)$/', $colTrim, $cm)) {
+                        $colName = $cm[1];
+                        if (!isset($existingMap[strtolower($colName)])) {
+                            $colDef = preg_replace('/\s+AUTO_INCREMENT\b/i', '', $cm[2]);
+                            // If adding a NOT NULL column without DEFAULT to an existing table, allow NULL or add safely
+                            try {
+                                $pdo->exec("ALTER TABLE `{$tableName}` ADD COLUMN `{$colName}` {$colDef}");
+                                $addedColumns[] = "{$tableName}.{$colName}";
+                            } catch (PDOException $colErr) {
+                                $nullableDef = preg_replace('/\bNOT NULL\b/i', 'NULL', (string) $colDef);
+                                try {
+                                    $pdo->exec("ALTER TABLE `{$tableName}` ADD COLUMN `{$colName}` {$nullableDef}");
+                                    $addedColumns[] = "{$tableName}.{$colName} (nullable)";
+                                } catch (PDOException $colErr2) {
+                                    $errors[] = [
+                                        'table' => $tableName,
+                                        'column' => $colName,
+                                        'message' => $colErr2->getMessage(),
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $ignore) {}
+        }
     }
+
+    // Backfill school_terms.academic_year_id if needed
+    try {
+        $pdo->exec("UPDATE school_terms t JOIN school_academic_years y ON y.school_id = t.school_id AND y.academic_year = t.academic_year SET t.academic_year_id = y.id WHERE t.academic_year_id IS NULL");
+    } catch (Throwable $ignore) {}
 
     $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
 
@@ -553,6 +610,8 @@ if ($action === 'sync_schema') {
         'processed_in_batch' => count($slice),
         'total_tables_in_file' => count($tableStatements),
         'created_or_verified' => count($created),
+        'added_columns_count' => count($addedColumns),
+        'added_columns' => $addedColumns,
         'errors' => $errors,
         'total_tables_now_in_db' => count($allTables),
     ], JSON_PRETTY_PRINT);
