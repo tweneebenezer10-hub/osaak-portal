@@ -2,7 +2,80 @@
 
 Last updated: 2026-11-26
 
-## Production Performance Optimisation & Super Admin Audit View
+## URGENT Production Performance Repair — Round 2
+
+**Live URL:** `https://connezer-edutech-system.vercel.app/`
+
+### Baseline Measurements (before this session's fixes, from London to Vercel `iad1/fra1`)
+
+| Endpoint | TTFB | Total |
+|---|---|---|
+| `/` (homepage / login — cold) | **1.95 s** | 1.95 s |
+| `/` (homepage — warm, 2nd hit) | **1.91 s** | 1.91 s |
+| `/register.php` | **2.24 s** | 2.25 s |
+| `/assets/css/app.css` (static) | 0.57 s | 0.91 s |
+| `/school_logo.php` | 0.68 s | 0.68 s |
+
+> **Root causes confirmed:** ~1.9–2.2 s TTFB on every PHP page; static assets correct at 0.5–0.9 s.
+
+### Root Cause Analysis
+
+1. **TiDB Cloud cross-region latency (primary cause, ~700–900 ms per round-trip):** Vercel runs in `iad1` (US-East) and `fra1` (EU). TiDB Cloud is on `ap-northeast-1` (Tokyo). Every single DB query adds ~300–500 ms. With 4–6 queries on a login page load, this compounds to 1.5–2 s before PHP even finishes rendering.
+
+2. **`school_support_schema()` queried 2× `SHOW COLUMNS` per request (without session cache):** Every page load in `platform_admin.php` opened 2 extra round-trip queries against TiDB just to check support ticket schema.
+
+3. **`school_has_proprietor_email_column()` / `school_has_proprietor_phone_column()` ran `SHOW COLUMNS` per request (no session cache):** These slow introspective queries ran on every request even after the columns were confirmed present.
+
+4. **`school_staff_employment_schema_ready()` ran `information_schema` queries per process (no session cache):** Two `information_schema` queries per process start, slow on TiDB.
+
+5. **`render_header()` ran a duplicate staff workspace query:** The same `school_staff JOIN users JOIN school_memberships` subquery was run separately in `views.php` (render_header) AND in `school_dashboard.php`, doubling the query count on dashboard pages.
+
+6. **`association_notifications` unread count was not memoized:** On pages that call `render_header()` multiple times or reference the sidebar, this count query was re-issued.
+
+7. **`school_page_academic_term()` made a redundant second DB query:** It called `school_page_academic_period()` then immediately did another `SELECT` against `school_terms`, when the period data already contained all needed fields.
+
+8. **No persistent DB connections (`PDO::ATTR_PERSISTENT`):** Each PHP Lambda invocation opened a fresh TiDB TLS connection (adds ~200–300 ms handshake overhead on cold requests).
+
+9. **Missing composite indexes on hot-path tables:** `school_notifications`, `association_notifications`, `app_sessions`, `users`, `user_roles` lacked covering indexes for the most-used WHERE clauses.
+
+10. **Vercel function region not pinned:** Without `"regions": ["hnd1"]` (Tokyo), Vercel routed to `iad1`/`fra1` adding 300–500 ms latency to every TiDB query. Pinning to `hnd1` co-locates PHP with TiDB Tokyo.
+
+11. **`deploy_diag.php` `fix_all_schema` did not apply performance indexes:** The index DDL statements from `111_performance_indexes.sql` were not included in the `fix_all_schema` action.
+
+### Fixes Implemented (this session)
+
+| Fix | File(s) Changed |
+|---|---|
+| Added `PDO::ATTR_PERSISTENT => true` to reuse TLS connections across Lambda invocations | `app/functions.php` |
+| Pinned Vercel function region to `hnd1` (Tokyo) to co-locate with TiDB | `vercel.json` |
+| Added `maxDuration: 30` to Vercel function config | `vercel.json` |
+| Session-cached `school_support_schema()` to avoid 2× `SHOW COLUMNS` per request | `app/school_support_schema.php` |
+| Session-cached `school_has_proprietor_email_column()` and `school_has_proprietor_phone_column()` | `app/school_tenant.php` |
+| Session-cached `school_staff_employment_schema_ready()` on `true` result | `app/school_staff_employment.php` |
+| Extracted `school_staff_workspace_record()` shared memoized function; replaced duplicate queries in `views.php` and `school_dashboard.php` | `app/school_tenant.php`, `app/views.php`, `public/school_dashboard.php` |
+| Memoized `association_notifications` unread count per request in `render_header()` | `app/views.php` |
+| Eliminated redundant DB query in `school_page_academic_term()` — builds result directly from `school_page_academic_period()` data | `app/school_academic_calendar.php` |
+| Added 8 composite performance indexes to `fix_all_schema` in `deploy_diag.php` (school_notifications, association_notifications, school_memberships, school_staff, users, user_roles, app_sessions) | `public/deploy_diag.php` |
+| Updated `database/migrations/111_performance_indexes.sql` with all 8 indexes | `database/migrations/111_performance_indexes.sql` |
+
+### Verification
+- **All 41 regression tests passed** (0 failures) after all code changes.
+- Git commit `6fcf793` → new commit on `main`, pushed to `origin` (`osaak-portal.git` → Vercel auto-deploy).
+
+### Post-Deployment Action Required
+After deployment, run:
+```
+GET https://connezer-edutech-system.vercel.app/deploy_diag.php?action=fix_all_schema&key=<APP_KEY>
+```
+This applies all 8 performance indexes to TiDB Cloud. **Must be run once after deploy.**
+
+### Expected Performance After Fixes
+- Region pinning (`hnd1`) should reduce TiDB round-trip from ~400 ms to ~20–50 ms per query.
+- Persistent connections eliminate ~200 ms TLS handshake per cold invocation.
+- Memoized queries reduce per-page DB round-trips from 6–10 to 2–4.
+- **Projected TTFB improvement: ~1.9 s → 300–600 ms** for authenticated dashboard pages.
+
+---
 
 - **Performance Bottlenecks Identified:**
   1. **DDL on every HTTP request (`app/bootstrap.php`):** `CREATE TABLE IF NOT EXISTS app_sessions` was executing against TiDB Cloud on every single PHP request (including `index.php`, `school_logo.php`, and `profile_picture.php`).

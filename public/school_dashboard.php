@@ -40,22 +40,7 @@ $schoolRole = (string) ($user['active_school_role'] ?? school_user_role_for_scho
 $hasOwnStaffWorkspace = false;
 $ownStaffRecord = null;
 if (active_it_support_context($user) === null) {
-    $ownStaffWorkspaceStmt = db()->prepare(
-        'SELECT staff.id, staff.employee_number, staff.role_name, staff.created_at
-         FROM school_staff staff
-         JOIN users account ON account.id = staff.user_id
-           AND account.status = "active" AND account.email_verified_at IS NOT NULL
-         WHERE staff.school_id = ? AND staff.user_id = ? AND staff.status = "active"
-           AND EXISTS (
-               SELECT 1 FROM school_memberships membership
-               WHERE membership.school_id = staff.school_id
-                 AND membership.user_id = staff.user_id AND membership.status = "active"
-                 AND membership.role_name NOT IN ("school_parent", "school_student")
-           )
-         LIMIT 1'
-    );
-    $ownStaffWorkspaceStmt->execute([$schoolId, (int) $user['id']]);
-    $ownStaffRecord = $ownStaffWorkspaceStmt->fetch() ?: null;
+    $ownStaffRecord = school_staff_workspace_record($schoolId, (int) $user['id']);
     $hasOwnStaffWorkspace = $ownStaffRecord !== null;
 }
 $ownStaffAttendance = null;

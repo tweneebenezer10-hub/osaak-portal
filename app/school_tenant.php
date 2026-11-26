@@ -167,9 +167,16 @@ function school_has_proprietor_email_column(): bool
     if ($available !== null) {
         return $available;
     }
+    if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['_schema_prop_email'])) {
+        $available = true;
+        return true;
+    }
 
     $column = db()->query("SHOW COLUMNS FROM schools LIKE 'proprietor_email'")->fetch();
     $available = $column !== false;
+    if ($available && session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION['_schema_prop_email'] = true;
+    }
     return $available;
 }
 
@@ -179,9 +186,16 @@ function school_has_proprietor_phone_column(): bool
     if ($available !== null) {
         return $available;
     }
+    if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['_schema_prop_phone'])) {
+        $available = true;
+        return true;
+    }
 
     $column = db()->query("SHOW COLUMNS FROM schools LIKE 'proprietor_phone'")->fetch();
     $available = $column !== false;
+    if ($available && session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION['_schema_prop_phone'] = true;
+    }
     return $available;
 }
 
@@ -1264,4 +1278,37 @@ function school_student_fee_clearance(int $studentId, int $schoolId, string $aca
     return $hasPendingBalance
         ? ['status' => 'Fee Clearance Pending', 'reason' => 'An outstanding balance has no approved active arrangement.']
         : ['status' => 'Cleared', 'reason' => 'Verified payments or approved adjustments satisfy the configured policy.'];
+}
+
+function school_staff_workspace_record(int $schoolId, int $userId): ?array
+{
+    if ($schoolId < 1 || $userId < 1) {
+        return null;
+    }
+    static $cache = [];
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    $cacheKey = $schoolId . ':' . $userId;
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+    $stmt = db()->prepare(
+        'SELECT staff.id, staff.employee_number, staff.role_name, staff.created_at
+         FROM school_staff staff
+         JOIN users account ON account.id = staff.user_id
+           AND account.status = "active" AND account.email_verified_at IS NOT NULL
+         WHERE staff.school_id = ? AND staff.user_id = ? AND staff.status = "active"
+           AND EXISTS (
+               SELECT 1 FROM school_memberships membership
+               WHERE membership.school_id = staff.school_id
+                 AND membership.user_id = staff.user_id AND membership.status = "active"
+                 AND membership.role_name NOT IN ("school_parent", "school_student")
+           )
+         LIMIT 1'
+    );
+    $stmt->execute([$schoolId, $userId]);
+    $record = $stmt->fetch() ?: null;
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $record;
+    }
+    return $record;
 }

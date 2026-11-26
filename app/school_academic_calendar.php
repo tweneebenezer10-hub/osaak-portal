@@ -142,17 +142,15 @@ function school_page_academic_term(int $schoolId): ?array
     if ($period === null) {
         return null;
     }
-    $stmt = db()->prepare(
-        'SELECT t.id, t.school_id, t.academic_year_id, y.academic_year,
-                t.term_name, t.starts_on, t.ends_on
-         FROM school_terms t
-         JOIN school_academic_years y
-           ON y.id = t.academic_year_id AND y.school_id = t.school_id
-         WHERE t.school_id = ? AND t.academic_year_id = ? AND t.term_name = ?
-         LIMIT 1'
-    );
-    $stmt->execute([$schoolId, $period['academic_year_id'], $period['term_name']]);
-    return $stmt->fetch() ?: null;
+    return [
+        'id' => (int) $period['term_id'],
+        'school_id' => $schoolId,
+        'academic_year_id' => (int) $period['academic_year_id'],
+        'academic_year' => (string) $period['academic_year'],
+        'term_name' => (string) $period['term_name'],
+        'starts_on' => (string) $period['starts_on'],
+        'ends_on' => (string) $period['ends_on'],
+    ];
 }
 
 function school_academic_years_for_school(int $schoolId, bool $openOnly = false): array

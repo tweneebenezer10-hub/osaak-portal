@@ -521,7 +521,15 @@ if ($action === 'fix_all_schema') {
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             KEY idx_timetable_entries_lookup (school_id, version_id, class_id)
-        ) ENGINE=InnoDB"
+        ) ENGINE=InnoDB",
+        "ALTER TABLE school_notifications ADD INDEX IF NOT EXISTS idx_school_notif_school_unread (school_id, recipient_user_id, archived_at, read_at)",
+        "ALTER TABLE users ADD INDEX IF NOT EXISTS idx_users_id_status (id, status, email_verified_at)",
+        "ALTER TABLE user_roles ADD INDEX IF NOT EXISTS idx_user_roles_user (user_id, role_id)",
+        "ALTER TABLE app_sessions ADD INDEX IF NOT EXISTS idx_app_sessions_id_expires (id, expires_at)",
+        "ALTER TABLE school_notifications ADD INDEX IF NOT EXISTS idx_school_notif_recipient_read (school_id, recipient_user_id, read_at)",
+        "ALTER TABLE association_notifications ADD INDEX IF NOT EXISTS idx_assoc_notif_user_read (user_id, read_at)",
+        "ALTER TABLE school_memberships ADD INDEX IF NOT EXISTS idx_school_memberships_user_status (user_id, status, school_id)",
+        "ALTER TABLE school_staff ADD INDEX IF NOT EXISTS idx_school_staff_school_user_status (school_id, user_id, status)",
     ];
 
     foreach ($statements as $sql) {
@@ -586,7 +594,11 @@ if ($action === 'sync_schema') {
             $tableStatements[] = [
                 'name' => $tableName,
                 'sql' => $safeStmt,
-            ];
+                "ALTER TABLE school_notifications ADD INDEX IF NOT EXISTS idx_school_notif_recipient_read (school_id, recipient_user_id, read_at)",
+        "ALTER TABLE association_notifications ADD INDEX IF NOT EXISTS idx_assoc_notif_user_read (user_id, read_at)",
+        "ALTER TABLE school_memberships ADD INDEX IF NOT EXISTS idx_school_memberships_user_status (user_id, status, school_id)",
+        "ALTER TABLE school_staff ADD INDEX IF NOT EXISTS idx_school_staff_school_user_status (school_id, user_id, status)",
+    ];
         }
     }
 
@@ -637,14 +649,22 @@ if ($action === 'sync_schema') {
                         'table' => $tableName,
                         'code' => (int) ($e2->errorInfo[1] ?? 0),
                         'message' => $e2->getMessage(),
-                    ];
+                        "ALTER TABLE school_notifications ADD INDEX IF NOT EXISTS idx_school_notif_recipient_read (school_id, recipient_user_id, read_at)",
+        "ALTER TABLE association_notifications ADD INDEX IF NOT EXISTS idx_assoc_notif_user_read (user_id, read_at)",
+        "ALTER TABLE school_memberships ADD INDEX IF NOT EXISTS idx_school_memberships_user_status (user_id, status, school_id)",
+        "ALTER TABLE school_staff ADD INDEX IF NOT EXISTS idx_school_staff_school_user_status (school_id, user_id, status)",
+    ];
                 }
             } else {
                 $errors[] = [
                     'table' => $tableName,
                     'code' => $code,
                     'message' => $e->getMessage(),
-                ];
+                    "ALTER TABLE school_notifications ADD INDEX IF NOT EXISTS idx_school_notif_recipient_read (school_id, recipient_user_id, read_at)",
+        "ALTER TABLE association_notifications ADD INDEX IF NOT EXISTS idx_assoc_notif_user_read (user_id, read_at)",
+        "ALTER TABLE school_memberships ADD INDEX IF NOT EXISTS idx_school_memberships_user_status (user_id, status, school_id)",
+        "ALTER TABLE school_staff ADD INDEX IF NOT EXISTS idx_school_staff_school_user_status (school_id, user_id, status)",
+    ];
             }
         }
 
@@ -673,7 +693,11 @@ if ($action === 'sync_schema') {
                                         'table' => $tableName,
                                         'column' => $colName,
                                         'message' => $colErr2->getMessage(),
-                                    ];
+                                        "ALTER TABLE school_notifications ADD INDEX IF NOT EXISTS idx_school_notif_recipient_read (school_id, recipient_user_id, read_at)",
+        "ALTER TABLE association_notifications ADD INDEX IF NOT EXISTS idx_assoc_notif_user_read (user_id, read_at)",
+        "ALTER TABLE school_memberships ADD INDEX IF NOT EXISTS idx_school_memberships_user_status (user_id, status, school_id)",
+        "ALTER TABLE school_staff ADD INDEX IF NOT EXISTS idx_school_staff_school_user_status (school_id, user_id, status)",
+    ];
                                 }
                             }
                         }

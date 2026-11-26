@@ -275,31 +275,29 @@ function render_header(string $title, bool $showNav = true): void
         : [];
     $associationUnreadNotifications = 0;
     if ($isApplication) {
-        $associationUnreadStmt = db()->prepare(
-            'SELECT COUNT(*) FROM association_notifications
-             WHERE user_id = ? AND read_at IS NULL'
-        );
-        $associationUnreadStmt->execute([(int) $user['id']]);
-        $associationUnreadNotifications = (int) $associationUnreadStmt->fetchColumn();
+        static $cachedAssocUnread = null;
+        static $cachedAssocUserId = null;
+        $isReadOnlyReq = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+        $assocUserId = (int) $user['id'];
+        if ($isReadOnlyReq && $cachedAssocUnread !== null && $cachedAssocUserId === $assocUserId) {
+            $associationUnreadNotifications = $cachedAssocUnread;
+        } else {
+            $associationUnreadStmt = db()->prepare(
+                'SELECT COUNT(*) FROM association_notifications
+                 WHERE user_id = ? AND read_at IS NULL'
+            );
+            $associationUnreadStmt->execute([$assocUserId]);
+            $associationUnreadNotifications = (int) $associationUnreadStmt->fetchColumn();
+            if ($isReadOnlyReq) {
+                $cachedAssocUnread = $associationUnreadNotifications;
+                $cachedAssocUserId = $assocUserId;
+            }
+        }
     }
     $schoolRole = $schoolId === null ? null : school_user_role_for_school((int) $user['id'], $schoolId);
     $hasStaffWorkspace = false;
     if ($schoolId !== null && $supportContext === null) {
-        $staffWorkspaceStmt = db()->prepare(
-            'SELECT 1 FROM school_staff staff
-             JOIN users account ON account.id = staff.user_id
-               AND account.status = "active" AND account.email_verified_at IS NOT NULL
-             WHERE staff.school_id = ? AND staff.user_id = ? AND staff.status = "active"
-               AND EXISTS (
-                   SELECT 1 FROM school_memberships membership
-                   WHERE membership.school_id = staff.school_id AND membership.user_id = staff.user_id
-                     AND membership.status = "active"
-                     AND membership.role_name NOT IN ("school_parent", "school_student")
-               )
-             LIMIT 1'
-        );
-        $staffWorkspaceStmt->execute([$schoolId, (int) $user['id']]);
-        $hasStaffWorkspace = (bool) $staffWorkspaceStmt->fetchColumn();
+        $hasStaffWorkspace = school_staff_workspace_record($schoolId, (int) $user['id']) !== null;
     }
     $schoolAcademicPeriod = $schoolId === null ? null : school_active_academic_year($schoolId);
     $schoolCurrentPeriod = $schoolId === null ? null : school_academic_period_for_date($schoolId);

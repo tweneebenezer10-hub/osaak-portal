@@ -32,6 +32,10 @@ function school_staff_employment_schema_ready(): bool
     if ($ready !== null) {
         return $ready;
     }
+    if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['_schema_emp_ready'])) {
+        $ready = true;
+        return true;
+    }
     $pdo = db();
     if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
         $tables = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table'")->fetchAll(PDO::FETCH_COLUMN);
@@ -58,6 +62,9 @@ function school_staff_employment_schema_ready(): bool
     );
     $columns->execute();
     $ready = (int) $columns->fetchColumn() === 3;
+    if ($ready && session_status() === PHP_SESSION_ACTIVE) {
+        $_SESSION['_schema_emp_ready'] = true;
+    }
     return $ready;
 }
 
