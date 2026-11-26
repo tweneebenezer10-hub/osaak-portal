@@ -7,7 +7,17 @@
   },
   "routes": [
     {
-      "src": "^/(assets|css|js)/(.*\\.(css|js|map|woff|woff2|ttf|eot|svg|png|jpg|jpeg|gif|ico|webp|avif))$",
+      "src": "^/assets/(.*\\.(css|js|map|woff|woff2|ttf|eot|svg|png|jpg|jpeg|gif|ico|webp|avif))$",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      },
+      "dest": "/public/assets/$1"
+    },
+    {
+      "src": "^/(css|js)/(.*\\.(css|js|map|woff|woff2|ttf|eot|svg|png|jpg|jpeg|gif|ico|webp|avif))$",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      },
       "dest": "/public/assets/$1/$2"
     },
     {

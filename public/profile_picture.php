@@ -43,7 +43,11 @@ if (preg_match('#^profile-pictures/[a-f0-9]{48}\.(jpg|png|webp)$#', $relativePat
     exit;
 }
 $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$matches[1]];
-if (!serve_stored_image($relativePath, $mime, 'private, no-store')) {
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+$cacheHeader = !empty($_GET['v']) ? 'private, max-age=3600' : 'private, max-age=300';
+if (!serve_stored_image($relativePath, $mime, $cacheHeader)) {
     http_response_code(404);
     exit;
 }

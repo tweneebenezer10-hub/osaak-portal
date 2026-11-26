@@ -60,6 +60,12 @@ function school_academic_period_for_date(int $schoolId, ?DateTimeImmutable $date
     }
     $date ??= new DateTimeImmutable('today');
     $today = $date->format('Y-m-d');
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    $cacheKey = $schoolId . ':' . (int) $activeYear['id'] . ':' . $today;
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
 
     $currentTermStmt = db()->prepare(
         'SELECT t.id, t.school_id, t.academic_year_id, y.academic_year, t.term_name, t.starts_on, t.ends_on
@@ -77,7 +83,7 @@ function school_academic_period_for_date(int $schoolId, ?DateTimeImmutable $date
     if ($currentTerm !== false
         && is_array($currentTerm)
         && school_academic_year_dates((string) $currentTerm['starts_on'], (string) $currentTerm['ends_on']) !== null) {
-        return [
+        $result = [
             'school_id' => (int) $currentTerm['school_id'],
             'academic_year_id' => (int) $currentTerm['academic_year_id'],
             'academic_year' => (string) $currentTerm['academic_year'],
@@ -86,6 +92,10 @@ function school_academic_period_for_date(int $schoolId, ?DateTimeImmutable $date
             'starts_on' => (string) $currentTerm['starts_on'],
             'ends_on' => (string) $currentTerm['ends_on'],
         ];
+        if ($isReadOnly) {
+            $cache[$cacheKey] = $result;
+        }
+        return $result;
     }
 
     $fallbackTermStmt = db()->prepare(
@@ -100,12 +110,18 @@ function school_academic_period_for_date(int $schoolId, ?DateTimeImmutable $date
     $fallbackTermStmt->execute([$schoolId, (int) $activeYear['id']]);
     $fallbackTerm = $fallbackTermStmt->fetch();
     if ($fallbackTerm === false || !is_array($fallbackTerm)) {
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
+        }
         return null;
     }
     if (school_academic_year_dates((string) $fallbackTerm['starts_on'], (string) $fallbackTerm['ends_on']) === null) {
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
+        }
         return null;
     }
-    return [
+    $result = [
         'school_id' => (int) $fallbackTerm['school_id'],
         'academic_year_id' => (int) $fallbackTerm['academic_year_id'],
         'academic_year' => (string) $fallbackTerm['academic_year'],
@@ -114,6 +130,10 @@ function school_academic_period_for_date(int $schoolId, ?DateTimeImmutable $date
         'starts_on' => (string) $fallbackTerm['starts_on'],
         'ends_on' => (string) $fallbackTerm['ends_on'],
     ];
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $result;
+    }
+    return $result;
 }
 
 function school_page_academic_term(int $schoolId): ?array
@@ -137,6 +157,12 @@ function school_page_academic_term(int $schoolId): ?array
 
 function school_academic_years_for_school(int $schoolId, bool $openOnly = false): array
 {
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    $cacheKey = $schoolId . ':' . ($openOnly ? '1' : '0');
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $stmt = db()->prepare(
         'SELECT id, school_id, academic_year, starts_on, ends_on, status, is_active
          FROM school_academic_years
@@ -144,11 +170,20 @@ function school_academic_years_for_school(int $schoolId, bool $openOnly = false)
          ORDER BY is_active DESC, academic_year DESC'
     );
     $stmt->execute([$schoolId]);
-    return $stmt->fetchAll();
+    $rows = $stmt->fetchAll();
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $rows;
+    }
+    return $rows;
 }
 
 function school_academic_terms_for_school(int $schoolId): array
 {
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    if ($isReadOnly && array_key_exists($schoolId, $cache)) {
+        return $cache[$schoolId];
+    }
     $stmt = db()->prepare(
         'SELECT t.id AS term_id, t.school_id, t.academic_year_id,
                 y.academic_year, t.term_name, t.starts_on, t.ends_on
@@ -160,11 +195,20 @@ function school_academic_terms_for_school(int $schoolId): array
          ORDER BY y.is_active DESC, y.academic_year DESC, t.starts_on, t.id'
     );
     $stmt->execute([$schoolId]);
-    return $stmt->fetchAll();
+    $rows = $stmt->fetchAll();
+    if ($isReadOnly) {
+        $cache[$schoolId] = $rows;
+    }
+    return $rows;
 }
 
 function school_active_academic_year(int $schoolId): ?array
 {
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    if ($isReadOnly && array_key_exists($schoolId, $cache)) {
+        return $cache[$schoolId];
+    }
     $stmt = db()->prepare(
         'SELECT id, school_id, academic_year, starts_on, ends_on, status, is_active
          FROM school_academic_years
@@ -173,7 +217,11 @@ function school_active_academic_year(int $schoolId): ?array
     );
     $stmt->execute([$schoolId]);
     $year = $stmt->fetch();
-    return is_array($year) ? $year : null;
+    $result = is_array($year) ? $year : null;
+    if ($isReadOnly) {
+        $cache[$schoolId] = $result;
+    }
+    return $result;
 }
 
 function school_academic_year_dates(string $startsOn, string $endsOn): ?array

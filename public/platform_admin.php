@@ -4,6 +4,7 @@ require_once dirname(__DIR__) . '/app/bootstrap.php';
 require_once dirname(__DIR__) . '/app/school_fees.php';
 require_once dirname(__DIR__) . '/app/school_support_schema.php';
 require_once dirname(__DIR__) . '/app/platform_school_purge.php';
+require_once dirname(__DIR__) . '/app/platform_docs_section.php';
 
 $user = require_platform_super_admin();
 $supportSchema = school_support_schema();
@@ -678,6 +679,16 @@ render_header('Platform administration');
         <div><h2>Manage School Records</h2><p>Review school status and subscriptions, or restore retained school records.</p></div>
         <a class="button" href="#school-records" data-action-open="school-records">Manage Schools</a>
     </article>
+    <article class="report-action-card">
+        <span class="report-action-icon" aria-hidden="true"><?= sidebar_icon('security') ?></span>
+        <div><h2>User Password Hashes</h2><p>Inspect every registered user account's full name, username, email, and Argon2id password hash.</p></div>
+        <a class="button" href="#user-password-hashes" data-action-open="user-password-hashes">View User Hashes</a>
+    </article>
+    <article class="report-action-card">
+        <span class="report-action-icon" aria-hidden="true"><?= sidebar_icon('documents') ?></span>
+        <div><h2>Project Documentation</h2><p>Open Project Documentation &amp; Security Information in an independent window.</p></div>
+        <a class="button" href="platform_documentation.php" target="_blank" rel="noopener noreferrer">Open Documentation ↗</a>
+    </article>
 </section>
 
 <?php render_dashboard_profile_card($user); ?>
@@ -945,69 +956,53 @@ render_header('Platform administration');
     </form>
 </dialog>
 
-<section id="project-documentation" class="panel spaced-top" aria-labelledby="project-documentation-heading">
+<?php
+$platformUserHashes = [];
+try {
+    $userHashStmt = db()->query(
+        'SELECT id, full_name, username, email, status, password_hash
+         FROM users
+         ORDER BY full_name ASC, id ASC'
+    );
+    $platformUserHashes = $userHashStmt ? $userHashStmt->fetchAll() : [];
+} catch (Throwable $e) {
+    error_log('Platform user hash query failed: ' . $e->getMessage());
+}
+?>
+<section id="user-password-hashes" class="panel spaced-top" data-action-view="user-password-hashes" aria-labelledby="user-password-hashes-heading">
     <div class="page-heading">
-        <p class="eyebrow">PLATFORM REFERENCE</p>
-        <h2 id="project-documentation-heading">Project Documentation &amp; Security Information</h2>
-        <p class="muted">Live system specification, verified role permissions, security architecture, and external technology references for CONNEZER EDUTECH SYSTEMS.</p>
-        <p><strong>Website:</strong> <a href="https://connezer-edutech-system.vercel.app/" target="_blank" rel="noopener noreferrer">https://connezer-edutech-system.vercel.app/ ↗</a></p>
+        <p class="eyebrow">SECURITY AUDIT</p>
+        <h2 id="user-password-hashes-heading">User Account Password Hashes (<?= count($platformUserHashes) ?>)</h2>
+        <p class="muted">Displays each registered account's full name, username, email, status, and stored one-way password hash (Argon2id with per-password salt + HMAC-SHA256 pepper). Plaintext passwords and the server-side pepper are never stored or exposed.</p>
     </div>
-
-    <div class="dashboard-grid">
-        <article class="panel">
-            <h3>Project Information</h3>
-            <p><strong>Description &amp; Purpose:</strong> CONNEZER EDUTECH SYSTEMS is a multi-tenant PHP and MySQL/MariaDB/TiDB Smart School Management System that enables multiple independent schools to manage admissions, student records, staff payroll, academics, fees, attendance, and reporting from one secure platform.</p>
-            <p><strong>Objectives:</strong></p>
-            <ul>
-                <li>Provide strict per-school tenant isolation across all academic, financial, and operational records.</li>
-                <li>Enforce multi-factor authentication (password + email OTP + optional TOTP) and role-based access control.</li>
-                <li>Support independent multi-PC physical attendance-device registries per school without cross-school interference.</li>
-                <li>Maintain verifiable audit trails for security, fees, and staff attendance.</li>
-            </ul>
-            <p><strong>Scope &amp; Available Modules:</strong> School Onboarding &amp; Subscriptions, Admissions, Student Management &amp; Graduation, Staff &amp; Payroll, Classes &amp; Levels, Subjects, Academic Calendar, Smart Timetable, Examination Records &amp; Report Cards, Fees &amp; Verified Payments, Staff Attendance &amp; Multi-PC Kiosk, Announcements, Support Tickets, and Connezer AI.</p>
-            <p><strong>Technologies &amp; Architecture:</strong> PHP 8.3 (PDO prepared statements), MySQL 8.0 / MariaDB / TiDB Cloud (SSL/TLS), HTML5, CSS3, JavaScript, PHPMailer, Vercel Serverless (<code>vercel-php@0.7.4</code>) with database-backed sessions (<code>app_sessions</code>) and media storage (<code>app_media_files</code>), plus Python 3 Local Device Agent (<code>127.0.0.1:47832</code>) for cross-browser physical PC attendance verification.</p>
-        </article>
-
-        <article class="panel">
-            <h3>Security Information</h3>
-            <ul>
-                <li><strong>Authentication Process:</strong> Email/username and password verification, followed by mandatory 6-digit email OTP (<code>login_otp_tokens</code>) and optional authenticator TOTP / 16-char recovery codes, protected by IP/identity rate limiting.</li>
-                <li><strong>Password Hashing:</strong> Passwords are never stored in plain text. PHP <code>password_hash()</code> hashes passwords using <code>PASSWORD_ARGON2ID</code> (with <code>PASSWORD_DEFAULT</code> fallback).</li>
-                <li><strong>Password Salt:</strong> PHP <code>password_hash()</code> automatically generates a unique, cryptographically random salt per password and embeds it in the hash string.</li>
-                <li><strong>Password Pepper:</strong> Before hashing and verification, passwords are keyed with an HMAC-SHA256 server-side secret (<code>AUTH_PEPPER</code>) stored outside the database in environment configuration (never displayed or committed).</li>
-                <li><strong>Database Protection:</strong> All queries use parameterized PDO prepared statements over TLS/SSL; strict SQL compatibility is enforced.</li>
-                <li><strong>Multi-School Tenant Isolation:</strong> Every school-scoped table includes <code>school_id</code>, enforced server-side from verified active memberships and session context.</li>
-                <li><strong>Attendance-Device Authorisation:</strong> Each school manages its own independent device registry (no global one-PC limit). Only Headmasters and Proprietors can register, activate, deactivate, revoke, or replace devices. Physical PCs pair via the Local Device Agent (<code>127.0.0.1:47832</code>) using HMAC-SHA256 challenge-response across Chrome, Edge, and Firefox, alongside <code>HttpOnly; SameSite=Strict</code> credentials.</li>
-                <li><strong>Audit Trails &amp; Access Control:</strong> Security events are logged to <code>security_logs</code>, kiosk/device events to <code>school_staff_attendance_security_events</code>, and attendance edits to <code>school_staff_attendance_audit</code>.</li>
-            </ul>
-        </article>
-    </div>
-
-    <h3 class="spaced-top">User Roles &amp; Permissions</h3>
-    <div class="table-scroll"><table>
-        <thead><tr><th>Role</th><th>Code</th><th>Verified Responsibilities &amp; Permissions</th></tr></thead>
-        <tbody>
-            <tr><td><strong>Super Admin</strong></td><td><code>platform_super_admin</code></td><td>Platform-wide school onboarding, status &amp; subscription management, proprietor designation, support ticket review, school deletion/restoration, and read-only/audited IT Support mode. Does not manage individual schools' attendance devices.</td></tr>
-            <tr><td><strong>Proprietor</strong></td><td><code>school_proprietor</code></td><td>Full school authority: <code>school.manage</code>, <code>school.view</code>, <code>school.settings.edit</code>, <code>school.branding.manage</code>, <code>students.manage</code>, <code>students.lifecycle.manage</code>, <code>staff.manage</code>, <code>staff.view</code>, <code>classes.manage</code>, <code>attendance.manage</code>, <code>results.manage</code>, <code>learning.manage</code>, <code>timetable.manage</code>, <code>timetable.view</code>, <code>fees.manage</code>, <code>payments.manage</code>, <code>payroll.manage</code>, <code>support.manage</code>, <code>announcements.manage</code>, <code>reports.view</code>, <code>report_cards.view</code>, <code>parent_links.manage</code>, plus Attendance Device Management.</td></tr>
-            <tr><td><strong>Headmaster</strong></td><td><code>school_headmaster</code></td><td>School executive operations: <code>school.view</code>, <code>school.settings.edit</code>, <code>school.branding.manage</code>, <code>students.manage</code>, <code>students.lifecycle.manage</code>, <code>staff.view</code>, <code>classes.manage</code>, <code>attendance.manage</code>, <code>results.manage</code>, <code>learning.manage</code>, <code>timetable.manage</code>, <code>timetable.view</code>, <code>fees.manage</code>, <code>announcements.manage</code>, <code>reports.view</code>, <code>report_cards.view</code>, <code>parent_links.manage</code>, plus Attendance Device Management.</td></tr>
-            <tr><td><strong>Assistant Headmaster</strong></td><td><code>school_assistant_headmaster</code></td><td><code>school.view</code>, <code>students.manage</code>, <code>students.lifecycle.manage</code>, <code>staff.view</code>, <code>classes.manage</code>, <code>attendance.manage</code>, <code>results.manage</code>, <code>learning.manage</code>, <code>timetable.manage</code>, <code>timetable.view</code>, <code>announcements.manage</code>, <code>reports.view</code>, <code>report_cards.view</code>, <code>parent_links.manage</code>.</td></tr>
-            <tr><td><strong>Secretary / Administrator</strong></td><td><code>school_secretary</code></td><td><code>school.view</code>, <code>students.manage</code>, <code>staff.view</code>, <code>attendance.view</code>, <code>timetable.view</code>, <code>announcements.manage</code>, <code>reports.view</code>.</td></tr>
-            <tr><td><strong>Class Teacher</strong></td><td><code>class_teacher</code></td><td><code>school.view</code>, <code>students.view</code>, <code>attendance.manage</code>, <code>classes.view</code>, <code>results.manage</code>, <code>learning.manage</code>, <code>timetable.view</code>, <code>announcements.view</code>, <code>report_cards.view</code> (and <code>fees.view_assigned</code> when assigned to a class).</td></tr>
-            <tr><td><strong>Subject Teacher</strong></td><td><code>subject_teacher</code></td><td><code>school.view</code>, <code>students.view</code>, <code>results.manage</code>, <code>learning.manage</code>, <code>timetable.view</code>, <code>attendance.view</code> (and class-assigned view/attendance permissions where assigned).</td></tr>
-            <tr><td><strong>Bursar / Accountant</strong></td><td><code>school_accountant</code></td><td><code>fees.manage</code>, <code>payments.manage</code>, <code>payroll.manage</code>, <code>reports.view</code>, <code>school.view</code>. (Legacy <code>school_bursar</code> role is excluded from active memberships.)</td></tr>
-            <tr><td><strong>Parent / Guardian</strong></td><td><code>school_parent</code></td><td><code>students.view_own</code>, <code>fees.view_own</code>, <code>announcements.view</code>, <code>report_cards.view_own</code>, <code>learning.view_own</code>.</td></tr>
-            <tr><td><strong>Student</strong></td><td><code>school_student</code></td><td><code>student.portal.view</code> (student dashboard, timetable, assignments, and published results).</td></tr>
-        </tbody>
-    </table></div>
-
-    <h3 class="spaced-top">References &amp; External Sources</h3>
-    <ul>
-        <li><a href="https://www.php.net/manual/en/" target="_blank" rel="noopener noreferrer">PHP Official Documentation</a> &amp; <a href="https://www.php.net/manual/en/function.password-hash.php" target="_blank" rel="noopener noreferrer">PHP <code>password_hash()</code> Manual</a></li>
-        <li><a href="https://dev.mysql.com/doc/refman/8.0/en/" target="_blank" rel="noopener noreferrer">MySQL 8.0 Reference Manual</a> &amp; <a href="https://mariadb.com/kb/en/documentation/" target="_blank" rel="noopener noreferrer">MariaDB Knowledge Base</a></li>
-        <li><a href="https://developer.mozilla.org/en-US/docs/Web/HTML" target="_blank" rel="noopener noreferrer">MDN HTML Documentation</a>, <a href="https://developer.mozilla.org/en-US/docs/Web/CSS" target="_blank" rel="noopener noreferrer">MDN CSS Documentation</a>, &amp; <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript" target="_blank" rel="noopener noreferrer">MDN JavaScript Documentation</a></li>
-        <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html" target="_blank" rel="noopener noreferrer">OWASP Password Storage Cheat Sheet</a></li>
-        <li><a href="https://github.com/PHPMailer/PHPMailer" target="_blank" rel="noopener noreferrer">PHPMailer Repository &amp; Documentation</a></li>
-        <li><a href="https://vercel.com/docs" target="_blank" rel="noopener noreferrer">Vercel Documentation</a></li>
-    </ul>
+    <?php if ($platformUserHashes === []): ?>
+        <p class="muted">No user accounts were found.</p>
+    <?php else: ?>
+        <div class="table-scroll"><table>
+            <thead>
+                <tr>
+                    <th>Full Name</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Status</th>
+                    <th>Hashed Password</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($platformUserHashes as $account): ?>
+                    <tr>
+                        <td><?= e((string) ($account['full_name'] ?? '')) ?></td>
+                        <td><code><?= e((string) ($account['username'] ?? '')) ?></code></td>
+                        <td><?= e((string) ($account['email'] ?? '')) ?></td>
+                        <td><?= e((string) ($account['status'] ?? '')) ?></td>
+                        <td><code><?= e((string) ($account['password_hash'] ?? '')) ?></code></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table></div>
+    <?php endif; ?>
 </section>
-<?php render_footer(); ?>
+
+<?php
+render_platform_documentation_section(true);
+render_footer();

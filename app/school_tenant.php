@@ -623,7 +623,16 @@ function active_school_id(): ?int
         return (int) $supportContext['school_id'];
     }
 
-    $schoolId = $_SESSION['active_school_id'] ?? null;
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    $rawSessionSchoolId = $_SESSION['active_school_id'] ?? null;
+    $userId = (int) ($_SESSION['user_id'] ?? 0);
+    $cacheKey = $userId . ':' . (is_scalar($rawSessionSchoolId) ? (string) $rawSessionSchoolId : '');
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    $schoolId = $rawSessionSchoolId;
     if (!is_numeric($schoolId)) {
         $activeMemberships = array_values(array_filter(
             school_user_memberships(),
@@ -633,7 +642,14 @@ function active_school_id(): ?int
         if (count($schoolIds) === 1) {
             $schoolId = $schoolIds[0];
             $_SESSION['active_school_id'] = $schoolId;
-            return (int) $schoolId;
+            $resolved = (int) $schoolId;
+            if ($isReadOnly) {
+                $cache[$userId . ':' . $resolved] = $resolved;
+            }
+            return $resolved;
+        }
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
         }
         return null;
     }
@@ -646,15 +662,21 @@ function active_school_id(): ?int
          JOIN schools s ON s.id = sm.school_id AND s.deleted_at IS NULL
          WHERE sm.user_id = ? AND sm.status = ? AND sm.role_name <> ?'
     );
-    $stmt->execute([$schoolId, (int) ($_SESSION['user_id'] ?? 0), 'active', 'school_bursar']);
+    $stmt->execute([$schoolId, $userId, 'active', 'school_bursar']);
     $membership = $stmt->fetch();
 
     if ($membership && (int) $membership['school_count'] === 1
         && (int) $membership['selected_count'] === 1) {
+        if ($isReadOnly) {
+            $cache[$cacheKey] = $schoolId;
+        }
         return $schoolId;
     }
 
     unset($_SESSION['active_school_id']);
+    if ($isReadOnly) {
+        $cache[$cacheKey] = null;
+    }
     return null;
 }
 
@@ -674,6 +696,17 @@ function school_access_is_available(int $schoolId): bool
 function active_school_context(): ?array
 {
     $user = current_user();
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    $userId = (int) ($user['id'] ?? ($_SESSION['user_id'] ?? 0));
+    $supportId = (string) ($_SESSION['it_support_session_id'] ?? '');
+    $sessionSchool = (string) ($_SESSION['active_school_id'] ?? '');
+    $sessionRole = (string) ($_SESSION['active_school_role'] ?? '');
+    $cacheKey = $userId . ':' . $supportId . ':' . $sessionSchool . ':' . $sessionRole;
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
     $supportContext = $user === null ? null : active_it_support_context($user);
     if ($supportContext !== null) {
         $stmt = db()->prepare(
@@ -685,14 +718,23 @@ function active_school_context(): ?array
         $stmt->execute([(int) $supportContext['school_id']]);
         $school = $stmt->fetch();
         if (!$school) {
+            if ($isReadOnly) {
+                $cache[$cacheKey] = null;
+            }
             return null;
         }
         $school['membership_role'] = (string) $supportContext['preview_role'];
+        if ($isReadOnly) {
+            $cache[$cacheKey] = $school;
+        }
         return $school;
     }
 
     $schoolId = active_school_id();
     if ($schoolId === null) {
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
+        }
         return null;
     }
 
@@ -706,11 +748,20 @@ function active_school_context(): ?array
     $school = $stmt->fetch();
     if (!$school) {
         unset($_SESSION['active_school_id']);
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
+        }
         return null;
     }
 
-    if (!school_access_is_available((int) $school['id'])) {
+    if ((string) $school['status'] !== 'active'
+        || !in_array((string) $school['subscription_status'], ['trial', 'active'], true)
+        || ($school['subscription_expires_at'] !== null
+            && strtotime((string) $school['subscription_expires_at'] . ' UTC') <= time())) {
         unset($_SESSION['active_school_id']);
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
+        }
         return null;
     }
 
@@ -727,10 +778,16 @@ function active_school_context(): ?array
     $membership = $stmt->fetch();
     if (!$membership) {
         unset($_SESSION['active_school_id']);
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
+        }
         return null;
     }
 
     $school['membership_role'] = (string) $membership['role_name'];
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $school;
+    }
     return $school;
 }
 
@@ -810,6 +867,12 @@ function school_teacher_has_class_assignment(
     if ($userId < 1 || $schoolId < 1) {
         return false;
     }
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    $cacheKey = $userId . ':' . $schoolId . ':' . ($classId ?? '') . ':' . ($academicYear ?? '');
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $sql = 'SELECT 1 FROM teacher_class_assignments tca
             JOIN school_classes sc ON sc.id = tca.class_id AND sc.school_id = tca.school_id
             WHERE tca.school_id = ? AND tca.teacher_user_id = ? AND tca.academic_year = sc.academic_year';
@@ -825,7 +888,11 @@ function school_teacher_has_class_assignment(
     $sql .= ' LIMIT 1';
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
-    return (bool) $stmt->fetchColumn();
+    $result = (bool) $stmt->fetchColumn();
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $result;
+    }
+    return $result;
 }
 
 function school_teacher_has_subject_assignment(
@@ -837,6 +904,12 @@ function school_teacher_has_subject_assignment(
 ): bool {
     if ($userId < 1 || $schoolId < 1) {
         return false;
+    }
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    $cacheKey = $userId . ':' . $schoolId . ':' . ($classId ?? '') . ':' . ($subjectId ?? '') . ':' . ($academicYear ?? '');
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $sql = 'SELECT 1 FROM class_subjects cs
             JOIN school_classes sc ON sc.id = cs.class_id AND sc.school_id = cs.school_id
@@ -857,7 +930,11 @@ function school_teacher_has_subject_assignment(
     $sql .= ' LIMIT 1';
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
-    return (bool) $stmt->fetchColumn();
+    $result = (bool) $stmt->fetchColumn();
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $result;
+    }
+    return $result;
 }
 
 function require_school_permission(int $schoolId, string $permission): array
@@ -879,6 +956,16 @@ function platform_super_admin_user(array $user): bool
     if ($userId < 1) {
         return false;
     }
+    if (array_key_exists('email', $user)
+        && strtolower(trim((string) $user['email'])) !== PLATFORM_SUPER_ADMIN_EMAIL) {
+        return false;
+    }
+
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    if ($isReadOnly && array_key_exists($userId, $cache)) {
+        return $cache[$userId];
+    }
 
     $stmt = db()->prepare(
         "SELECT 1
@@ -890,7 +977,11 @@ function platform_super_admin_user(array $user): bool
          LIMIT 1"
     );
     $stmt->execute([$userId, PLATFORM_SUPER_ADMIN_EMAIL]);
-    return (bool) $stmt->fetchColumn();
+    $result = (bool) $stmt->fetchColumn();
+    if ($isReadOnly) {
+        $cache[$userId] = $result;
+    }
+    return $result;
 }
 
 const PLATFORM_SUPER_ADMIN_EMAIL = 'tweneebenezer897@gmail.com';
@@ -909,10 +1000,21 @@ function platform_super_admin_contact_details(): array
 
 function active_it_support_context(?array $user = null): ?array
 {
-    $user ??= current_user();
     $supportId = filter_var($_SESSION['it_support_session_id'] ?? null, FILTER_VALIDATE_INT);
-    if ($user === null || $supportId === false || $supportId < 1 || !platform_super_admin_user($user)) {
+    if ($supportId === false || $supportId < 1) {
         return null;
+    }
+
+    $user ??= current_user();
+    if ($user === null || !platform_super_admin_user($user)) {
+        return null;
+    }
+
+    $isReadOnly = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST';
+    static $cache = [];
+    $cacheKey = $supportId . ':' . (int) $user['id'] . ':' . session_id();
+    if ($isReadOnly && array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
 
     $stmt = db()->prepare(
@@ -930,9 +1032,15 @@ function active_it_support_context(?array $user = null): ?array
     $context = $stmt->fetch();
     if (!$context || $context['preview_role'] === 'school_bursar'
         || !in_array($context['access_mode'], ['read_only', 'administrative'], true)) {
+        if ($isReadOnly) {
+            $cache[$cacheKey] = null;
+        }
         return null;
     }
 
+    if ($isReadOnly) {
+        $cache[$cacheKey] = $context;
+    }
     return $context;
 }
 

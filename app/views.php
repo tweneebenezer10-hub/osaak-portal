@@ -390,6 +390,7 @@ function render_header(string $title, bool $showNav = true): void
         <?php if ($platformAdmin): ?>
             <p class="sidebar-group-label">Platform overview</p>
             <a href="platform_admin.php" class="<?= $title === 'Platform administration' ? 'active' : '' ?>"><span class="sidebar-icon"><?= sidebar_icon('overview') ?></span> Platform dashboard</a>
+            <a href="platform_documentation.php" target="_blank" rel="noopener noreferrer" class="<?= $title === 'Project documentation' ? 'active' : '' ?>"><span class="sidebar-icon"><?= sidebar_icon('documents') ?></span> Project documentation ↗</a>
             <p class="sidebar-group-label">School administration</p>
             <a href="platform_admin.php#school-records" class="<?= $title === 'School management' ? 'active' : '' ?>"><span class="sidebar-icon"><?= sidebar_icon('school') ?></span> Schools and subscriptions</a>
         <?php elseif ($schoolId !== null): ?>

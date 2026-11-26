@@ -1,6 +1,28 @@
 # CONNEZER EDUTECH SYSTEMS — Project Progress
 
-Last updated: 2026-11-25
+Last updated: 2026-11-26
+
+## Production Performance Optimisation & Super Admin Audit View
+
+- **Performance Bottlenecks Identified:**
+  1. **DDL on every HTTP request (`app/bootstrap.php`):** `CREATE TABLE IF NOT EXISTS app_sessions` was executing against TiDB Cloud on every single PHP request (including `index.php`, `school_logo.php`, and `profile_picture.php`).
+  2. **Unconditional session DB reads & writes (`app/session_handler.php`, `app/functions.php`):** `enforce_session_idle_timeout()` updated `$_SESSION['last_activity_at'] = time()` on every request, forcing `DatabaseSessionHandler::write()` (`INSERT ... ON DUPLICATE KEY UPDATE app_sessions`) on every page load, even read-only `GET` requests. `read()` also queried `app_sessions` even when no session cookie existed.
+  3. **Repeated per-request tenant/calendar/role queries (`app/school_tenant.php`, `app/school_academic_calendar.php`):** `active_school_context()`, `active_school_id()`, `platform_super_admin_user()`, `active_it_support_context()`, `school_teacher_has_class_assignment()`, and academic calendar lookups lacked per-request memoization and issued duplicate queries (e.g., querying `schools` twice inside `active_school_context()`, and querying `users JOIN user_roles JOIN roles` for non-super-admin users).
+  4. **Missing PDO connection timeout (`app/functions.php`):** No `PDO::ATTR_TIMEOUT` was configured.
+  5. **Uncached image endpoints (`public/school_logo.php`, `public/profile_picture.php`) & broken `vercel.json` asset route:** `profile_picture.php` sent `Cache-Control: private, no-store` and `school_logo.php` used `max-age=60` without closing the session early; `vercel.json` rule 1 (`^/(assets|css|js)/... -> /public/assets/$1/$2`) doubled `/assets/assets/` on `/assets/...` requests.
+- **Optimisations Implemented:**
+  - Removed per-request `CREATE TABLE IF NOT EXISTS app_sessions` from `app/bootstrap.php`; added lazy missing-table (`42S02`) fallback in `app/session_handler.php`.
+  - Updated `DatabaseSessionHandler` to skip `SELECT` when no session cookie is present and skip `UPDATE` when session data is unchanged; throttled `last_activity_at` updates in `enforce_session_idle_timeout()` to once every 60 seconds.
+  - Added `PDO::ATTR_TIMEOUT => 5` in `app/functions.php`.
+  - Added read-only per-request memoization and short-circuiting in `app/school_tenant.php` (`platform_super_admin_user()`, `active_it_support_context()`, `active_school_id()`, `active_school_context()`, `school_teacher_has_class_assignment()`, `school_teacher_has_subject_assignment()`) and `app/school_academic_calendar.php`.
+  - Added `session_write_close()` and `Cache-Control: private, max-age=3600` (with `?v=`) on `public/school_logo.php` and `public/profile_picture.php`.
+  - Fixed `vercel.json` static asset routing and added `Cache-Control: public, max-age=31536000, immutable` for static assets.
+  - Added `database/migrations/111_performance_indexes.sql` for hot-path composite indexes on `school_notifications`, `association_notifications`, `school_memberships`, and `school_staff`.
+- **Super Admin Dashboard Updates:**
+  - Added **User Account Password Hashes** (`#user-password-hashes`) to `public/platform_admin.php`, displaying each user's Full Name, Username, Email, Status, and one-way `password_hash` (without exposing plaintext passwords or `AUTH_PEPPER`).
+  - Wired `public/platform_admin.php` to `render_platform_documentation_section(true)` (with "Open in independent window ↗" linking to `public/platform_documentation.php`, matching the sidebar link in `app/views.php`).
+- **Deployment & Live Measurement Status:**
+  - Note: Local shell execution (`run_command`) was blocked in this session because the IDE workspace root (`c:\Users\Ebenezer\Desktop\2FA`) did not match the OneDrive folder (`C:\Users\Ebenezer\OneDrive\Desktop\2FA`), and the browser subagent hit quota limits. Therefore, git commit/push to Vercel, applying `111_performance_indexes.sql` via `fix_all_schema`, and post-deployment live timing measurements remain to be executed from the OneDrive workspace.
 
 ## Multi-PC Staff Attendance Device Management, Academic Word Report & Super Admin Documentation
 

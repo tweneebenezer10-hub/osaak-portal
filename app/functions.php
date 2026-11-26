@@ -19,6 +19,7 @@ function db(): PDO
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
+            PDO::ATTR_TIMEOUT => 5,
         ];
         if (!empty($db['ssl_ca'])) {
             $pdoOptions[PDO::MYSQL_ATTR_SSL_CA] = (string) $db['ssl_ca'];
@@ -403,14 +404,17 @@ function current_user(): ?array
 
 function enforce_session_idle_timeout(): void
 {
+    $now = time();
     $lastActivity = (int) ($_SESSION['last_activity_at'] ?? 0);
-    if ($lastActivity > 0 && $lastActivity < time() - (8 * 60 * 60)) {
+    if ($lastActivity > 0 && $lastActivity < $now - (8 * 60 * 60)) {
         clear_remember_cookie();
         clear_auth_session();
         flash('error', 'Your session expired after a period of inactivity. Please sign in again.');
         return;
     }
-    $_SESSION['last_activity_at'] = time();
+    if ($now - $lastActivity >= 60) {
+        $_SESSION['last_activity_at'] = $now;
+    }
 }
 
 function require_login(): array

@@ -118,25 +118,7 @@ session_set_cookie_params([
     'samesite' => 'Strict',
 ]);
 if ($isProduction) {
-    try {
-        db()->exec("CREATE TABLE IF NOT EXISTS app_sessions (
-            id VARCHAR(128) NOT NULL PRIMARY KEY,
-            session_data MEDIUMTEXT NOT NULL,
-            expires_at DATETIME NOT NULL,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            KEY idx_app_sessions_expires (expires_at)
-        ) ENGINE=InnoDB");
-        session_set_save_handler(new DatabaseSessionHandler(db()), true);
-    } catch (Throwable $e) {
-        error_log('Database session handler initialization: ' . $e->getMessage());
-        $tempSession = sys_get_temp_dir() . '/connezer_sessions';
-        if (!is_dir($tempSession)) {
-            @mkdir($tempSession, 0700, true);
-        }
-        if (is_dir($tempSession) && is_writable($tempSession)) {
-            session_save_path($tempSession);
-        }
-    }
+    session_set_save_handler(new DatabaseSessionHandler(), true);
 }
 session_start();
 

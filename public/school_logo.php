@@ -60,14 +60,17 @@ if (!is_string($relativePath)
 }
 
 $mime = ['jpg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp'][$matches[1]];
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 $reportCardVariant = (string) ($_GET['variant'] ?? '') === 'report_card';
 if ($reportCardVariant && $matches[1] === 'jpg') {
     $transparentRelativePath = substr($relativePath, 0, -4) . '.png';
-    if (serve_stored_image($transparentRelativePath, 'image/png', 'private, max-age=60')) {
+    if (serve_stored_image($transparentRelativePath, 'image/png', 'private, max-age=3600')) {
         exit;
     }
 }
-if (!serve_stored_image($relativePath, $mime, 'private, max-age=60')) {
+if (!serve_stored_image($relativePath, $mime, 'private, max-age=3600')) {
     http_response_code(404);
     exit;
 }
